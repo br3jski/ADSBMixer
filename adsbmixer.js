@@ -26,16 +26,39 @@ function isValidMessage(message) {
 }
 
 function isBinaryData(data) {
-  // Sprawdzamy, czy dane zaczynają się od charakterystycznych bajtów formatu AVR/Beast
-  return data[0] === 0x1a || data[0] === 0x31 || data[0] === 0x32 || data[0] === 0x33;
+  // Sprawdzamy pierwsze kilka bajtów, czy pasują do formatu AVR/Beast
+  const header = data.slice(0, 3);
+  return header[0] === 0x1a && (header[1] === 0x31 || header[1] === 0x32 || header[1] === 0x33);
 }
 
 const feedServer = net.createServer(feedSocket => {
   console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
+  let buffer = Buffer.alloc(0);
+
   feedSocket.on('data', data => {
-    processData(data);
+    buffer = Buffer.concat([buffer, data]);
+    processBuffer();
   });
+
+  function processBuffer() {
+    if (isBinaryData(buffer)) {
+      sendToBinaryClients(buffer);
+      buffer = Buffer.alloc(0);
+    } else {
+      let textEnd = buffer.indexOf('\n');
+      while (textEnd !== -1) {
+        const message = buffer.slice(0, textEnd).toString().trim();
+        if (isValidMessage(message)) {
+          sendToTextClients(message);
+        } else {
+          console.log('Odrzucono niepoprawną wiadomość:', message);
+        }
+        buffer = buffer.slice(textEnd + 1);
+        textEnd = buffer.indexOf('\n');
+      }
+    }
+  }
 
   feedSocket.on('close', () => {
     console.log(`Połączenie zakończone z ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
@@ -73,21 +96,6 @@ const outputServerBinary = net.createServer(outputSocket => {
 outputServerBinary.listen(outputPortBinary, '10.0.0.1', () => {
   console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
 });
-
-function processData(data) {
-  if (isBinaryData(data)) {
-    sendToBinaryClients(data);
-  } else {
-    const messages = data.toString().trim().split('\n');
-    for (const message of messages) {
-      if (isValidMessage(message)) {
-        sendToTextClients(message);
-      } else {
-        console.log('Odrzucono niepoprawną wiadomość:', message);
-      }
-    }
-  }
-}
 
 function sendToTextClients(message) {
   for (const socket of connectedClientsText) {
