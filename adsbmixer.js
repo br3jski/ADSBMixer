@@ -63,48 +63,83 @@ const feedServer = net.createServer(feedSocket => {
   feedSocket.on('close', () => {
     console.log(`Połączenie zakończone z ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
   });
+
+  feedSocket.on('error', (error) => {
+    console.error(`Błąd połączenia z ${feedSocket.remoteAddress}:${feedSocket.remotePort}:`, error.message);
+    feedSocket.destroy();
+  });
+});
+
+feedServer.on('error', (error) => {
+  console.error('Błąd serwera feed:', error.message);
 });
 
 feedServer.listen(feedPort, () => {
   console.log(`Serwer nasłuchuje na porcie ${feedPort}`);
 });
 
-const outputServerText = net.createServer(outputSocket => {
-  console.log(`Klient tekstowy połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-  connectedClientsText.add(outputSocket);
+function createOutputServer(port, isTextServer) {
+  const server = net.createServer(outputSocket => {
+    const clientType = isTextServer ? 'tekstowy' : 'binarny';
+    console.log(`Klient ${clientType} połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
+    
+    const clientSet = isTextServer ? connectedClientsText : connectedClientsBinary;
+    clientSet.add(outputSocket);
 
-  outputSocket.on('close', () => {
-    console.log(`Klient tekstowy rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-    connectedClientsText.delete(outputSocket);
+    outputSocket.on('close', () => {
+      console.log(`Klient ${clientType} rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
+      clientSet.delete(outputSocket);
+    });
+
+    outputSocket.on('error', (error) => {
+      console.error(`Błąd połączenia klienta ${clientType} ${outputSocket.remoteAddress}:${outputSocket.remotePort}:`, error.message);
+      clientSet.delete(outputSocket);
+      outputSocket.destroy();
+    });
   });
-});
 
-outputServerText.listen(outputPortText, '10.0.0.1', () => {
-  console.log(`Serwer tekstowy nasłuchuje na porcie ${outputPortText}`);
-});
-
-const outputServerBinary = net.createServer(outputSocket => {
-  console.log(`Klient binarny połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-  connectedClientsBinary.add(outputSocket);
-
-  outputSocket.on('close', () => {
-    console.log(`Klient binarny rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-    connectedClientsBinary.delete(outputSocket);
+  server.on('error', (error) => {
+    console.error(`Błąd serwera ${isTextServer ? 'tekstowego' : 'binarnego'}:`, error.message);
   });
-});
 
-outputServerBinary.listen(outputPortBinary, '10.0.0.1', () => {
-  console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
-});
+  server.listen(port, '10.0.0.1', () => {
+    console.log(`Serwer ${isTextServer ? 'tekstowy' : 'binarny'} nasłuchuje na porcie ${port}`);
+  });
+
+  return server;
+}
+
+const outputServerText = createOutputServer(outputPortText, true);
+const outputServerBinary = createOutputServer(outputPortBinary, false);
+
+function sendToClients(clients, data) {
+  for (const socket of clients) {
+    try {
+      const success = socket.write(data);
+      if (!success) {
+        console.warn(`Nie udało się wysłać danych do klienta ${socket.remoteAddress}:${socket.remotePort}`);
+      }
+    } catch (error) {
+      console.error(`Błąd podczas wysyłania danych do klienta ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
+      clients.delete(socket);
+      socket.destroy();
+    }
+  }
+}
 
 function sendToTextClients(message) {
-  for (const socket of connectedClientsText) {
-    socket.write(message + '\n');
-  }
+  sendToClients(connectedClientsText, message + '\n');
 }
 
 function sendToBinaryClients(data) {
-  for (const socket of connectedClientsBinary) {
-    socket.write(data);
-  }
+  sendToClients(connectedClientsBinary, data);
 }
+
+// Obsługa nieoczekiwanych błędów
+process.on('uncaughtException', (error) => {
+  console.error('Nieoczekiwany błąd:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Nieobsłużone odrzucenie obietnicy:', reason);
+});
