@@ -52,7 +52,7 @@ const feedServer = net.createServer(feedSocket => {
         if (isValidMessage(message)) {
           sendToTextClients(message);
         } else {
-          console.log('Odrzucono niepoprawną wiadomość:', message);
+          //console.log('Odrzucono niepoprawną wiadomość:', message);
         }
         buffer = buffer.slice(textEnd + 1);
         textEnd = buffer.indexOf('\n');
