@@ -47,4 +47,4 @@ function sendToClients(message) {
   for (const socket of connectedClients) {
     socket.write(message + '\n');
   }
-}
+} 
