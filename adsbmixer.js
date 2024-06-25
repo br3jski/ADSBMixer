@@ -20,6 +20,14 @@ tokenClient.on('error', (error) => {
     console.error('Błąd połączenia z serwerem tokenów:', error.message);
 });
 
+function sendTokenInfo(token, ipAddress) {
+  console.log(`Nowy token otrzymany: ${token} od IP: ${ipAddress}`);
+  const tokenInfo = JSON.stringify({ token, ipAddress });
+  tokenClient.write(tokenInfo + '\n');
+  console.log(`Token wysłany do serwera docelowego`);
+}
+
+
 function isValidMessage(message) {
     const fields = message.split(',');
   
@@ -41,44 +49,44 @@ function isBinaryData(data) {
 }
 
 const feedServer = net.createServer(feedSocket => {
-    console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
+  console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
-    let buffer = Buffer.alloc(0);
-    let currentToken = null;
+  let buffer = Buffer.alloc(0);
+  let currentToken = null;
 
-    feedSocket.on('data', data => {
-        buffer = Buffer.concat([buffer, data]);
-        processBuffer();
-    });
+  feedSocket.on('data', data => {
+      buffer = Buffer.concat([buffer, data]);
+      processBuffer();
+  });
 
-    function processBuffer() {
-        while (buffer.length > 0) {
-            if (buffer.toString().startsWith('TOKEN:')) {
-                const tokenEnd = buffer.indexOf('\n');
-                if (tokenEnd !== -1) {
-                    currentToken = buffer.slice(6, tokenEnd).toString().trim();
-                    sendTokenInfo(currentToken, feedSocket.remoteAddress);
-                    buffer = buffer.slice(tokenEnd + 1);
-                } else {
-                    break;  // Niepełny token, czekamy na więcej danych
-                }
-            } else if (isBinaryData(buffer)) {
-                sendToBinaryClients(buffer);
-                buffer = Buffer.alloc(0);
-            } else {
-                const textEnd = buffer.indexOf('\n');
-                if (textEnd !== -1) {
-                    const message = buffer.slice(0, textEnd).toString().trim();
-                    if (isValidMessage(message)) {
-                        sendToTextClients(message);
-                    }
-                    buffer = buffer.slice(textEnd + 1);
-                } else {
-                    break;  // Niepełna wiadomość, czekamy na więcej danych
-                }
-            }
-        }
-    }
+  function processBuffer() {
+      while (buffer.length > 0) {
+          if (buffer.toString().startsWith('TOKEN:')) {
+              const tokenEnd = buffer.indexOf('\n');
+              if (tokenEnd !== -1) {
+                  currentToken = buffer.slice(6, tokenEnd).toString().trim();
+                  sendTokenInfo(currentToken, feedSocket.remoteAddress);
+                  buffer = buffer.slice(tokenEnd + 1);
+              } else {
+                  break;  // Niepełny token, czekamy na więcej danych
+              }
+          } else if (isBinaryData(buffer)) {
+              sendToBinaryClients(buffer);
+              buffer = Buffer.alloc(0);
+          } else {
+              const textEnd = buffer.indexOf('\n');
+              if (textEnd !== -1) {
+                  const message = buffer.slice(0, textEnd).toString().trim();
+                  if (isValidMessage(message)) {
+                      sendToTextClients(message);
+                  }
+                  buffer = buffer.slice(textEnd + 1);
+              } else {
+                  break;  // Niepełna wiadomość, czekamy na więcej danych
+              }
+          }
+      }
+  }
 
     feedSocket.on('close', () => {
         console.log(`Połączenie zakończone z ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
