@@ -61,32 +61,42 @@ const feedServer = net.createServer(feedSocket => {
 
   function processBuffer() {
     while (buffer.length > 0) {
+        // Obsługa tokena
         if (buffer.toString().startsWith('TOKEN:')) {
             const tokenEnd = buffer.indexOf('\n');
             if (tokenEnd !== -1) {
                 currentToken = buffer.slice(6, tokenEnd).toString().trim();
                 sendTokenInfo(currentToken, feedSocket.remoteAddress);
                 buffer = buffer.slice(tokenEnd + 1);
+                continue;  // Przejdź do następnej iteracji, aby przetworzyć resztę bufora
             } else {
                 break;  // Niepełny token, czekamy na więcej danych
             }
-        } else if (isBinaryData(buffer)) {
-            // Zakładamy, że dane binarne mają stałą długość lub mają znacznik końca
-            // Tu możesz dostosować logikę do swojego formatu danych binarnych
+        }
+
+        // Obsługa danych binarnych
+        if (isBinaryData(buffer)) {
             const binaryLength = 1024; // Przykładowa długość, dostosuj do rzeczywistej długości ramki
             if (buffer.length >= binaryLength) {
                 const binaryData = buffer.slice(0, binaryLength);
-                sendToBinaryClients(binaryData);
+                if (!binaryData.toString().includes('TOKEN:')) {
+                    sendToBinaryClients(binaryData);
+                } else {
+                    console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
+                }
                 buffer = buffer.slice(binaryLength);
             } else {
                 break; // Niepełne dane binarne, czekamy na więcej
             }
         } else {
+            // Obsługa danych tekstowych
             const textEnd = buffer.indexOf('\n');
             if (textEnd !== -1) {
                 const message = buffer.slice(0, textEnd).toString().trim();
-                if (isValidMessage(message)) {
+                if (isValidMessage(message) && !message.includes('TOKEN:')) {
                     sendToTextClients(message);
+                } else if (message.includes('TOKEN:')) {
+                    console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
                 }
                 buffer = buffer.slice(textEnd + 1);
             } else {
