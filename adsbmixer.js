@@ -66,9 +66,8 @@ function extractTokenAndProcess(data, ipAddress) {
 
 function isBaseStationFormat(data) {
     try {
-        const firstLine = data.toString().split('\n')[0];
-        const fields = firstLine.split(',');
-        return firstLine.startsWith('MSG,') && fields.length >= 10;
+        const firstLine = data.toString().split('\n')[0].trim();
+        return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
     } catch (error) {
         return false;
     }
