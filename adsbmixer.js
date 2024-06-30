@@ -89,13 +89,8 @@ function isValidMessage(message) {
 }
 
 function isBinaryData(data) {
-    const checkLength = Math.min(data.length, 64);
-    for (let i = 0; i < checkLength; i++) {
-        if (data[i] < 32 || data[i] > 126) {
-            return true;
-        }
-    }
-    return false;
+    // Sprawdź, czy dane zaczynają się od markera danych binarnych
+    return data[0] === 0x1a && (data[1] === 0x31 || data[1] === 0x32 || data[1] === 0x33);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -124,16 +119,25 @@ const feedServer = net.createServer(feedSocket => {
                     break;
                 }
             }
-
+    
             // Sprawdź, czy mamy do czynienia z danymi binarnymi
             if (isBinaryData(buffer)) {
-                const chunkSize = Math.min(buffer.length, 1024);
-                const chunk = buffer.slice(0, chunkSize);
+                // Znajdź koniec ramki binarnej (możesz dostosować to do swojego formatu danych)
+                let endIndex = 1024; // Przykładowa długość ramki binarnej
+                for (let i = 1; i < Math.min(buffer.length, 1024); i++) {
+                    if (buffer[i] === 0x1a) { // Zakładamy, że 0x1a to marker końca ramki
+                        endIndex = i + 1;
+                        break;
+                    }
+                }
+                
+                const chunk = buffer.slice(0, endIndex);
                 sendToBinaryClients(chunk);
-                buffer = buffer.slice(chunkSize);
+                buffer = buffer.slice(endIndex);
+                console.log(`Wysłano dane binarne o długości ${chunk.length}`);
                 continue;
             }
-
+    
             // Obsługa wiadomości tekstowych
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
@@ -142,10 +146,10 @@ const feedServer = net.createServer(feedSocket => {
                 }
                 break;
             }
-
+    
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
-
+    
             // Dodatkowe sprawdzenie, czy linia nie zawiera tokena
             if (line.startsWith('TOKEN:')) {
                 const token = line.slice(6).trim();
