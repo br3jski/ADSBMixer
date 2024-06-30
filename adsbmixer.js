@@ -83,10 +83,8 @@ const feedServer = net.createServer(feedSocket => {
 
     function processBuffer() {
         while (buffer.length > 0) {
-            // Sprawdź, czy mamy pełną linię
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
-                // Jeśli nie ma pełnej linii, czekamy na więcej danych
                 break;
             }
     
@@ -97,17 +95,19 @@ const feedServer = net.createServer(feedSocket => {
             if (line.startsWith('TOKEN:')) {
                 currentToken = line.slice(6).trim();
                 sendTokenInfo(currentToken, feedSocket.remoteAddress);
-                continue;
+                continue;  // Przejdź do następnej linii, nie wysyłaj tokena do klientów
             }
     
             // Obsługa danych binarnych
             if (isBinaryData(Buffer.from(line))) {
-                sendToBinaryClients(Buffer.from(line));
+                if (!line.includes('TOKEN:')) {  // Dodatkowe sprawdzenie dla bezpieczeństwa
+                    sendToBinaryClients(Buffer.from(line));
+                }
             } else {
                 // Obsługa danych tekstowych
-                if (isValidMessage(line)) {
+                if (isValidMessage(line) && !line.includes('TOKEN:')) {
                     sendToTextClients(line);
-                } else {
+                } else if (!line.startsWith('TOKEN:')) {  // Loguj tylko jeśli to nie jest linia z tokenem
                     console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
                 }
             }
