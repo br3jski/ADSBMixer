@@ -63,9 +63,15 @@ function processData(data, ipAddress) {
             }
         } else if (data[offset] === 0x1a) {
             // Dane binarne
-            const remainingData = data.slice(offset);
-            sendToBinaryClients(remainingData);
-            offset = data.length;
+            let endIndex = data.indexOf(0x1a, offset + 1);
+            if (endIndex === -1) {
+                endIndex = data.length;
+            } else {
+                endIndex++; // Uwzględnij końcowy znacznik
+            }
+            const binaryData = data.slice(offset, endIndex);
+            sendToBinaryClients(binaryData);
+            offset = endIndex;
         } else {
             // Dane tekstowe
             const newlineIndex = data.indexOf('\n', offset);
