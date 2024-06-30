@@ -11,7 +11,11 @@ let reconnectInterval = 5000;
 const logFile = fs.createWriteStream('debug.log', { flags: 'a' });
 
 function logToFile(message) {
-    logFile.write(`${new Date().toISOString()} - ${message}\n`);
+    logFile.write(`${new Date().toISOString()} - ${message}\n`, (err) => {
+        if (err) {
+            console.error('Błąd zapisu do pliku logu:', err);
+        }
+    });
 }
 
 function connectToTokenServer() {
@@ -68,7 +72,7 @@ function extractTokenAndProcess(data, ipAddress) {
         }
     }
 
-    logToFile('Przetworzone dane po wycięciu tokena:', processedData.toString());
+    logToFile(`Przetworzone dane po wycięciu tokena: ${processedData.toString()}`);
     return { token, processedData };
 }
 
@@ -76,8 +80,8 @@ function isBaseStationFormat(data) {
     const baseStationRegex = /^MSG,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+.*$/m;
     const dataString = data.toString();
     const isMatch = baseStationRegex.test(dataString);
-    logToFile('Sprawdzanie formatu danych:', dataString);
-    logToFile('Czy dane pasują do formatu BaseStation:', isMatch);
+    logToFile(`Sprawdzanie formatu danych: ${dataString}`);
+    logToFile(`Czy dane pasują do formatu BaseStation: ${isMatch}`);
     return isMatch;
 }
 
@@ -218,10 +222,4 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    logToFile(`Nieobsłużone odrzucenie obietnicy: ${reason}`);
-});
-
-setInterval(() => {
-    logToFile(`Liczba podłączonych klientów tekstowych: ${textClients.size}`);
-    logToFile(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
-}, 10000);
+    logToFile(`
