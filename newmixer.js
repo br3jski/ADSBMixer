@@ -8,9 +8,6 @@ const tokenPort = 8888;
 const connectedClientsText = new Set();
 const connectedClientsBinary = new Set();
 
-const MSG_TYPES = new Set(['1', '2', '3', '4', '5', '6', '7', '8']);
-const MIN_FIELDS = 10;
-
 let tokenClient = null;
 let reconnectInterval = 5000;
 
@@ -50,141 +47,38 @@ function sendTokenInfo(token, ipAddress) {
     }
 }
 
-function isValidMessage(message) {
-    if (message.includes('TOKEN:')) {
-        console.log('Wiadomość zawiera TOKEN, pomijanie');
-        return false;
-    }
-
-    const fields = message.split(',');
-  
-    if (fields.length < MIN_FIELDS) {
-        console.log(`Niewystarczająca liczba pól: ${fields.length}`);
-        return false;
-    }
-    if (fields[0] !== 'MSG' || !MSG_TYPES.has(fields[1])) {
-        console.log(`Nieprawidłowy typ wiadomości: ${fields[0]}, ${fields[1]}`);
-        return false;
-    }
-  
-    const dateTimeRegex = /^\d{4}\/\d{2}\/\d{2},\d{2}:\d{2}:\d{2}\.\d{3}$/;
-    if (fields.length > 7 && !dateTimeRegex.test(fields[6] + ',' + fields[7])) {
-        console.log(`Nieprawidłowy format daty/czasu`);
-        return false;
-    }
-  
-    if (fields[1] === '3') {
-        if (fields.length < 16) {
-            console.log(`Niewystarczająca liczba pól dla typu 3`);
-            return false;
-        }
-        const lat = parseFloat(fields[14]);
-        const lon = parseFloat(fields[15]);
-        if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-            console.log(`Nieprawidłowe współrzędne: ${lat}, ${lon}`);
-            return false;
-        }
-    }
-    return true;
-}
-
-function detectDataFormat(data) {
-    if (data.toString().startsWith('TOKEN:')) {
-        return 'token';
-    } else if (data[0] === 0x1a) {
-        return 'binary';
-    } else if (data.toString().startsWith('MSG,')) {
-        return 'text';
-    } else {
-        return 'unknown';
-    }
-}
-
-function handleToken(data, ipAddress) {
-    const newlineIndex = data.indexOf('\n');
-    if (newlineIndex !== -1) {
-        const tokenLine = data.slice(0, newlineIndex).toString().trim();
-        const token = tokenLine.slice(6).trim();
-        sendTokenInfo(token, ipAddress);
-        return newlineIndex + 1;
-    }
-    return 0;
-}
-
-function handleBinaryData(data) {
+function processData(data, ipAddress) {
     let offset = 0;
     while (offset < data.length) {
-        if (data[offset] === 0x1a) {
-            const messageType = data[offset + 1];
-            let messageLength;
-            switch (messageType) {
-                case 0x31: // Mode-AC
-                    messageLength = 11;
-                    break;
-                case 0x32: // Mode-S short
-                    messageLength = 16;
-                    break;
-                case 0x33: // Mode-S long
-                    messageLength = 23;
-                    break;
-                default:
-                    console.log('Nieznany typ wiadomości binarnej');
-                    offset++;
-                    continue;
-            }
-            if (offset + messageLength <= data.length) {
-                const message = data.slice(offset, offset + messageLength);
-                sendToBinaryClients(message);
-                offset += messageLength;
+        // Sprawdź, czy to token
+        if (data.slice(offset).toString().startsWith('TOKEN:')) {
+            const newlineIndex = data.indexOf('\n', offset);
+            if (newlineIndex !== -1) {
+                const tokenLine = data.slice(offset, newlineIndex).toString().trim();
+                const token = tokenLine.slice(6).trim();
+                sendTokenInfo(token, ipAddress);
+                offset = newlineIndex + 1;
             } else {
-                break; // Niepełna wiadomość, czekaj na więcej danych
+                break; // Niepełny token, czekaj na więcej danych
             }
+        } else if (data[offset] === 0x1a) {
+            // Dane binarne
+            const remainingData = data.slice(offset);
+            sendToBinaryClients(remainingData);
+            offset = data.length;
         } else {
-            offset++;
+            // Dane tekstowe
+            const newlineIndex = data.indexOf('\n', offset);
+            if (newlineIndex !== -1) {
+                const textData = data.slice(offset, newlineIndex + 1);
+                sendToTextClients(textData);
+                offset = newlineIndex + 1;
+            } else {
+                break; // Niepełna linia tekstu, czekaj na więcej danych
+            }
         }
     }
-    return offset;
-}
-
-function handleTextData(data) {
-    const newlineIndex = data.indexOf('\n');
-    if (newlineIndex !== -1) {
-        const line = data.slice(0, newlineIndex).toString().trim();
-        if (isValidMessage(line)) {
-            console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
-            sendToTextClients(line);
-        } else {
-            console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
-        }
-        return newlineIndex + 1;
-    }
-    return 0;
-}
-
-function processData(data, ipAddress) {
-    let processedLength = 0;
-    while (data.length > 0) {
-        const format = detectDataFormat(data);
-        switch(format) {
-            case 'token':
-                processedLength = handleToken(data, ipAddress);
-                break;
-            case 'binary':
-                processedLength = handleBinaryData(data);
-                break;
-            case 'text':
-                processedLength = handleTextData(data);
-                break;
-            default:
-                console.log('Nieznany format danych:', data.toString('hex').substring(0, 20));
-                processedLength = 1;
-        }
-        if (processedLength === 0) {
-            break;
-        }
-        data = data.slice(processedLength);
-    }
-    return data; // Zwracamy nieprzetworzony bufor
+    return data.slice(offset); // Zwróć nieprzetworzony bufor
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -267,9 +161,9 @@ function sendToClients(clients, data) {
     }
 }
 
-function sendToTextClients(message) {
-    console.log(`Wysyłanie danych tekstowych: ${message.substring(0, 50)}...`);
-    sendToClients(connectedClientsText, message + '\n');
+function sendToTextClients(data) {
+    console.log(`Wysyłanie danych tekstowych o długości: ${data.length}`);
+    sendToClients(connectedClientsText, data);
 }
 
 function sendToBinaryClients(data) {
