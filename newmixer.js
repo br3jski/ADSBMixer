@@ -14,8 +14,6 @@ const MIN_FIELDS = 10;
 let tokenClient = null;
 let reconnectInterval = 5000;
 
-let incompleteMessage = Buffer.alloc(0);
-
 function connectToTokenServer() {
     if (tokenClient) {
         tokenClient.destroy();
@@ -102,12 +100,12 @@ function detectDataFormat(data) {
     }
 }
 
-function handleToken(data) {
+function handleToken(data, ipAddress) {
     const newlineIndex = data.indexOf('\n');
     if (newlineIndex !== -1) {
         const tokenLine = data.slice(0, newlineIndex).toString().trim();
         const token = tokenLine.slice(6).trim();
-        sendTokenInfo(token, feedSocket.remoteAddress);
+        sendTokenInfo(token, ipAddress);
         return newlineIndex + 1;
     }
     return 0;
@@ -163,16 +161,13 @@ function handleTextData(data) {
     return 0;
 }
 
-function processData(data) {
-    data = Buffer.concat([incompleteMessage, data]);
-    incompleteMessage = Buffer.alloc(0);
-
+function processData(data, ipAddress) {
+    let processedLength = 0;
     while (data.length > 0) {
         const format = detectDataFormat(data);
-        let processedLength = 0;
         switch(format) {
             case 'token':
-                processedLength = handleToken(data);
+                processedLength = handleToken(data, ipAddress);
                 break;
             case 'binary':
                 processedLength = handleBinaryData(data);
@@ -181,22 +176,25 @@ function processData(data) {
                 processedLength = handleTextData(data);
                 break;
             default:
-                console.log('Nieznany format danych');
+                console.log('Nieznany format danych:', data.toString('hex').substring(0, 20));
                 processedLength = 1;
         }
         if (processedLength === 0) {
-            incompleteMessage = data;
             break;
         }
         data = data.slice(processedLength);
     }
+    return data; // Zwracamy nieprzetworzony bufor
 }
 
 const feedServer = net.createServer(feedSocket => {
     console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
+    let buffer = Buffer.alloc(0);
+
     feedSocket.on('data', data => {
-        processData(data);
+        buffer = Buffer.concat([buffer, data]);
+        buffer = processData(buffer, feedSocket.remoteAddress);
     });
 
     feedSocket.on('close', () => {
