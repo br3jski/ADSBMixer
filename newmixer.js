@@ -88,10 +88,11 @@ function isBaseStationFormat(data) {
 
 function processData(data, ipAddress) {
     // Sprawdź, czy dane są w formacie BaseStation
-    const isBaseStation = data.toString().trim().startsWith('MSG,');
+    const dataString = data.toString().trim();
+    const isBaseStation = dataString.startsWith('MSG,');
 
     if (isBaseStation) {
-        const lines = data.toString().trim().split('\n');
+        const lines = dataString.split('\n');
         const processedLines = [];
         let tokensExtracted = 0;
 
