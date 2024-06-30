@@ -83,46 +83,36 @@ const feedServer = net.createServer(feedSocket => {
 
     function processBuffer() {
         while (buffer.length > 0) {
-            // Obsługa tokena
-            if (buffer.toString().startsWith('TOKEN:')) {
-                const tokenEnd = buffer.indexOf('\n');
-                if (tokenEnd !== -1) {
-                    currentToken = buffer.slice(6, tokenEnd).toString().trim();
-                    sendTokenInfo(currentToken, feedSocket.remoteAddress);
-                    buffer = buffer.slice(tokenEnd + 1);
-                    continue;  // Przejdź do następnej iteracji, aby przetworzyć resztę bufora
-                } else {
-                    break;  // Niepełny token, czekamy na więcej danych
-                }
+            // Sprawdź, czy mamy pełną linię
+            const newlineIndex = buffer.indexOf('\n');
+            if (newlineIndex === -1) {
+                // Jeśli nie ma pełnej linii, czekamy na więcej danych
+                break;
             }
-
+    
+            const line = buffer.slice(0, newlineIndex).toString().trim();
+            buffer = buffer.slice(newlineIndex + 1);
+    
+            // Obsługa tokena
+            if (line.startsWith('TOKEN:')) {
+                currentToken = line.slice(6).trim();
+                sendTokenInfo(currentToken, feedSocket.remoteAddress);
+                continue;
+            }
+    
             // Obsługa danych binarnych
-            if (isBinaryData(buffer)) {
-                const binaryLength = 1024; // Przykładowa długość, dostosuj do rzeczywistej długości ramki
-                if (buffer.length >= binaryLength) {
-                    const binaryData = buffer.slice(0, binaryLength);
-                    if (!binaryData.toString().includes('TOKEN:')) {
-                        sendToBinaryClients(binaryData);
-                    } else {
-                        console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
-                    }
-                    buffer = buffer.slice(binaryLength);
+            if (isBinaryData(Buffer.from(line))) {
+                if (!line.includes('TOKEN:')) {
+                    sendToBinaryClients(Buffer.from(line));
                 } else {
-                    break; // Niepełne dane binarne, czekamy na więcej
+                    console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
                 }
             } else {
                 // Obsługa danych tekstowych
-                const textEnd = buffer.indexOf('\n');
-                if (textEnd !== -1) {
-                    const message = buffer.slice(0, textEnd).toString().trim();
-                    if (isValidMessage(message) && !message.includes('TOKEN:')) {
-                        sendToTextClients(message);
-                    } else if (message.includes('TOKEN:')) {
-                        console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
-                    }
-                    buffer = buffer.slice(textEnd + 1);
-                } else {
-                    break;  // Niepełna wiadomość, czekamy na więcej danych
+                if (isValidMessage(line) && !line.includes('TOKEN:')) {
+                    sendToTextClients(line);
+                } else if (line.includes('TOKEN:')) {
+                    console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
                 }
             }
         }
