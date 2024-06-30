@@ -101,7 +101,13 @@ function validateBaseStationLine(line) {
     if (!dateTimeRegex.test(parts[6] + ',' + parts[7])) return false;
     if (!dateTimeRegex.test(parts[8] + ',' + parts[9])) return false;
 
+    // Sprawdź, czy callsign nie zawiera tokenu
+    if (parts.some(part => part.includes('TOKEN:'))) return false;
+
     return true;
+}
+function logRejectedLine(line) {
+    logToFile(`Odrzucona linia: ${line}`);
 }
 
 let logCounter = 0;
@@ -111,7 +117,17 @@ function processData(data, ipAddress) {
 
     if (isBaseStationFormat(processedData)) {
         const lines = processedData.toString().trim().split('\n');
-        const validLines = lines.filter(validateBaseStationLine);
+        const validLines = lines.filter(line => {
+            const isValid = validateBaseStationLine(line);
+            if (!isValid) {
+                logRejectedLine(line);
+            }
+            return isValid;
+        });
+    
+        if (validLines.length > 0) {
+            sendToTextClients(Buffer.from(validLines.join('\n') + '\n'));
+        }
         const invalidLines = lines.filter(line => !validateBaseStationLine(line));
 
         logToFile(`Przetworzono ${lines.length} linii, z czego ${validLines.length} poprawnych i ${invalidLines.length} niepoprawnych.`);
