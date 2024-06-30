@@ -66,9 +66,17 @@ function extractTokenAndProcess(data, ipAddress) {
 
 function isBaseStationFormat(data) {
     try {
-        const firstLine = data.toString().split('\n')[0].trim();
-        return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
+        const str = data.toString('utf8');
+        const lines = str.split('\n');
+        for (let line of lines) {
+            line = line.trim();
+            if (line.startsWith('MSG,') && line.split(',').length >= 10) {
+                return true;
+            }
+        }
+        return false;
     } catch (error) {
+        console.error('Błąd w isBaseStationFormat:', error);
         return false;
     }
 }
@@ -77,11 +85,17 @@ function processData(data, ipAddress) {
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
     console.log('Typ danych:', typeof processedData);
-    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 10).toString('hex'));
+    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 20).toString('hex'));
+    console.log('Pierwsze 50 znaków jako tekst:', processedData.toString('utf8').slice(0, 50));
 
-    if (isBaseStationFormat(processedData)) {
+    const isBaseStation = isBaseStationFormat(processedData);
+    const isBinary = isProbablyBinary(processedData);
+    console.log('Czy to format BaseStation?', isBaseStation);
+    console.log('Czy to prawdopodobnie dane binarne?', isBinary);
+
+    if (isBaseStation && !isBinary) {
         console.log('Wykryto dane tekstowe (BaseStation)');
-        console.log(`Dane tekstowe: ${processedData.toString().slice(0, 100)}`);
+        console.log(`Dane tekstowe: ${processedData.toString('utf8').slice(0, 100)}`);
         sendToTextClients(processedData);
     } else {
         console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
@@ -90,6 +104,17 @@ function processData(data, ipAddress) {
     }
 
     return Buffer.alloc(0);
+}
+
+function isProbablyBinary(data) {
+    // Sprawdź pierwsze 100 bajtów (lub mniej, jeśli dane są krótsze)
+    const checkLength = Math.min(100, data.length);
+    for (let i = 0; i < checkLength; i++) {
+        if (data[i] < 32 && data[i] !== 10 && data[i] !== 13) { // Ignoruj LF i CR
+            return true;
+        }
+    }
+    return false;
 }
 
 const feedServer = net.createServer(feedSocket => {
