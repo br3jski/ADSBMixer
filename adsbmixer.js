@@ -3,16 +3,10 @@ const net = require('net');
 const feedPort = 46666;
 const outputPortText = 58511;
 const outputPortBinary = 58512;
-const tokenPort = 8888;  // Port dla danych o tokenach
-
-const connectedClientsText = new Set();
-const connectedClientsBinary = new Set();
-
-const MSG_TYPES = new Set(['1', '2', '3', '4', '5', '6', '7', '8']);
-const MIN_FIELDS = 10;
+const tokenPort = 8888;
 
 let tokenClient = null;
-let reconnectInterval = 5000; // 5 sekund między próbami ponownego połączenia
+let reconnectInterval = 5000;
 
 function connectToTokenServer() {
     if (tokenClient) {
@@ -23,7 +17,7 @@ function connectToTokenServer() {
 
     tokenClient.connect(tokenPort, '10.0.0.17', () => {
         console.log('Połączono z serwerem tokenów');
-        reconnectInterval = 5000; // Reset interwału do wartości początkowej po udanym połączeniu
+        reconnectInterval = 5000;
     });
 
     tokenClient.on('error', (error) => {
@@ -33,7 +27,7 @@ function connectToTokenServer() {
     tokenClient.on('close', () => {
         console.log('Połączenie z serwerem tokenów zostało zamknięte. Próba ponownego połączenia...');
         setTimeout(connectToTokenServer, reconnectInterval);
-        reconnectInterval = Math.min(reconnectInterval * 2, 60000); // Zwiększ interwał, max 1 minuta
+        reconnectInterval = Math.min(reconnectInterval * 2, 60000);
     });
 }
 
@@ -50,42 +44,50 @@ function sendTokenInfo(token, ipAddress) {
     }
 }
 
-function isValidMessage(message) {
-    if (message.includes('TOKEN:')) {
-        console.log('Wiadomość zawiera TOKEN, pomijanie');
-        return false;
+function extractTokenAndProcess(data, ipAddress) {
+    let token = null;
+    let processedData = data;
+
+    const tokenIndex = data.indexOf('TOKEN:');
+    if (tokenIndex !== -1) {
+        const newlineIndex = data.indexOf('\n', tokenIndex);
+        if (newlineIndex !== -1) {
+            token = data.slice(tokenIndex + 6, newlineIndex).toString().trim();
+            processedData = Buffer.concat([
+                data.slice(0, tokenIndex),
+                data.slice(newlineIndex + 1)
+            ]);
+            sendTokenInfo(token, ipAddress);
+        }
     }
 
-    const fields = message.split(',');
-  
-    if (fields.length < MIN_FIELDS) {
-        console.log(`Niewystarczająca liczba pól: ${fields.length}`);
-        return false;
+    return { token, processedData };
+}
+
+function isBaseStationFormat(data) {
+    // Sprawdź, czy dane są tekstowe
+    if (data.every(byte => (byte >= 32 && byte <= 126) || byte === 10 || byte === 13)) {
+        const firstLine = data.toString().split('\n')[0];
+        return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
     }
-    if (fields[0] !== 'MSG' || !MSG_TYPES.has(fields[1])) {
-        console.log(`Nieprawidłowy typ wiadomości: ${fields[0]}, ${fields[1]}`);
-        return false;
+    return false;
+}
+
+function processData(data, ipAddress) {
+    const { processedData } = extractTokenAndProcess(data, ipAddress);
+
+    console.log('Typ danych:', typeof processedData);
+    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 10));
+
+    if (isBaseStationFormat(processedData)) {
+        console.log('Wykryto dane tekstowe (BaseStation)');
+        sendToTextClients(processedData);
+    } else {
+        console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
+        sendToBinaryClients(processedData);
     }
-  
-    const dateTimeRegex = /^\d{4}\/\d{2}\/\d{2},\d{2}:\d{2}:\d{2}\.\d{3}$/;
-    if (fields.length > 7 && !dateTimeRegex.test(fields[6] + ',' + fields[7])) {
-        console.log(`Nieprawidłowy format daty/czasu`);
-        return false;
-    }
-  
-    if (fields[1] === '3') {
-        if (fields.length < 16) {
-            console.log(`Niewystarczająca liczba pól dla typu 3`);
-            return false;
-        }
-        const lat = parseFloat(fields[14]);
-        const lon = parseFloat(fields[15]);
-        if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
-            console.log(`Nieprawidłowe współrzędne: ${lat}, ${lon}`);
-            return false;
-        }
-    }
-    return true;
+
+    return Buffer.alloc(0);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -95,61 +97,8 @@ const feedServer = net.createServer(feedSocket => {
 
     feedSocket.on('data', data => {
         buffer = Buffer.concat([buffer, data]);
-        processBuffer();
+        buffer = processData(buffer, feedSocket.remoteAddress);
     });
-
-    function processBuffer() {
-        while (buffer.length > 0) {
-            // Obsługa tokena
-            if (buffer.toString().startsWith('TOKEN:')) {
-                const newlineIndex = buffer.indexOf('\n');
-                if (newlineIndex !== -1) {
-                    const tokenLine = buffer.slice(0, newlineIndex).toString().trim();
-                    const token = tokenLine.slice(6).trim();
-                    sendTokenInfo(token, feedSocket.remoteAddress);
-                    buffer = buffer.slice(newlineIndex + 1);
-                    continue;
-                } else {
-                    break; // Niepełny token, czekamy na więcej danych
-                }
-            }
-
-            // Obsługa danych binarnych
-            if (buffer[0] === 0x1a) {
-                let endIndex = buffer.indexOf(0x1a, 1);
-                if (endIndex === -1) {
-                    endIndex = Math.min(buffer.length, 1024); // Maksymalna długość ramki binarnej
-                } else {
-                    endIndex++; // Uwzględnij marker końca
-                }
-                
-                const chunk = buffer.slice(0, endIndex);
-                sendToBinaryClients(chunk);
-                buffer = buffer.slice(endIndex);
-                console.log(`Wysłano dane binarne o długości ${chunk.length}`);
-                continue;
-            }
-
-            // Obsługa wiadomości tekstowych
-            const newlineIndex = buffer.indexOf('\n');
-            if (newlineIndex === -1) {
-                if (buffer.length > 10240) { // 10 KB
-                    buffer = buffer.slice(buffer.length - 10240);
-                }
-                break;
-            }
-
-            const line = buffer.slice(0, newlineIndex).toString().trim();
-            buffer = buffer.slice(newlineIndex + 1);
-
-            if (isValidMessage(line)) {
-                console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
-                sendToTextClients(line);
-            } else {
-                console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
-            }
-        }
-    }
 
     feedSocket.on('close', () => {
         console.log(`Połączenie zakończone z ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
@@ -169,39 +118,52 @@ feedServer.listen(feedPort, () => {
     console.log(`Serwer nasłuchuje na porcie ${feedPort}`);
 });
 
-function createOutputServer(port, isTextServer) {
-    const server = net.createServer(outputSocket => {
-        const clientType = isTextServer ? 'tekstowy' : 'binarny';
-        console.log(`Klient ${clientType} połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-    
-        const clientSet = isTextServer ? connectedClientsText : connectedClientsBinary;
-        clientSet.add(outputSocket);
+const textClients = new Set();
+const binaryClients = new Set();
 
-        outputSocket.on('close', () => {
-            console.log(`Klient ${clientType} rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-            clientSet.delete(outputSocket);
-        });
+const textServer = net.createServer(socket => {
+    console.log(`Klient tekstowy połączony: ${socket.remoteAddress}:${socket.remotePort}`);
+    textClients.add(socket);
+    console.log(`Liczba klientów tekstowych po dodaniu: ${textClients.size}`);
 
-        outputSocket.on('error', (error) => {
-            console.error(`Błąd połączenia klienta ${clientType} ${outputSocket.remoteAddress}:${outputSocket.remotePort}:`, error.message);
-            clientSet.delete(outputSocket);
-            outputSocket.destroy();
-        });
+    socket.on('close', () => {
+        console.log(`Klient tekstowy rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
+        textClients.delete(socket);
+        console.log(`Liczba klientów tekstowych po usunięciu: ${textClients.size}`);
     });
 
-    server.on('error', (error) => {
-        console.error(`Błąd serwera ${isTextServer ? 'tekstowego' : 'binarnego'}:`, error.message);
+    socket.on('error', (error) => {
+        console.error(`Błąd klienta tekstowego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
+        textClients.delete(socket);
+        console.log(`Liczba klientów tekstowych po błędzie: ${textClients.size}`);
+    });
+});
+
+textServer.listen(outputPortText, '0.0.0.0', () => {
+    console.log(`Serwer tekstowy nasłuchuje na porcie ${outputPortText}`);
+});
+
+const binaryServer = net.createServer(socket => {
+    console.log(`Klient binarny połączony: ${socket.remoteAddress}:${socket.remotePort}`);
+    binaryClients.add(socket);
+    console.log(`Liczba klientów binarnych po dodaniu: ${binaryClients.size}`);
+
+    socket.on('close', () => {
+        console.log(`Klient binarny rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
+        binaryClients.delete(socket);
+        console.log(`Liczba klientów binarnych po usunięciu: ${binaryClients.size}`);
     });
 
-    server.listen(port, '10.0.0.1', () => {
-        console.log(`Serwer ${isTextServer ? 'tekstowy' : 'binarny'} nasłuchuje na porcie ${port}`);
+    socket.on('error', (error) => {
+        console.error(`Błąd klienta binarnego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
+        binaryClients.delete(socket);
+        console.log(`Liczba klientów binarnych po błędzie: ${binaryClients.size}`);
     });
+});
 
-    return server;
-}
-
-const outputServerText = createOutputServer(outputPortText, true);
-const outputServerBinary = createOutputServer(outputPortBinary, false);
+binaryServer.listen(outputPortBinary, '0.0.0.0', () => {
+    console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
+});
 
 function sendToClients(clients, data) {
     console.log(`Próba wysłania danych do ${clients.size} klientów`);
@@ -221,17 +183,18 @@ function sendToClients(clients, data) {
     }
 }
 
-function sendToTextClients(message) {
-    console.log(`Wysyłanie danych tekstowych: ${message.substring(0, 50)}...`);
-    sendToClients(connectedClientsText, message + '\n');
-}
-
 function sendToBinaryClients(data) {
-    console.log(`Wysyłanie danych binarnych o długości: ${data.length}`);
-    sendToClients(connectedClientsBinary, data);
+    console.log(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
+    console.log(`Pierwsze 50 bajtów danych binarnych: ${data.slice(0, 50).toString('hex')}`);
+    sendToClients(binaryClients, data);
 }
 
-// Obsługa nieoczekiwanych błędów
+function sendToTextClients(data) {
+    console.log(`Próba wysłania danych tekstowych o długości: ${data.length} na port ${outputPortText}`);
+    console.log(`Pierwsze 100 znaków danych tekstowych: ${data.slice(0, 100).toString()}`);
+    sendToClients(textClients, data);
+}
+
 process.on('uncaughtException', (error) => {
     console.error('Nieoczekiwany błąd:', error);
 });
@@ -239,3 +202,8 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Nieobsłużone odrzucenie obietnicy:', reason);
 });
+
+setInterval(() => {
+    console.log(`Liczba podłączonych klientów tekstowych: ${textClients.size}`);
+    console.log(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
+}, 10000);
