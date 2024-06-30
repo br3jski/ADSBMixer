@@ -11,22 +11,44 @@ const connectedClientsBinary = new Set();
 const MSG_TYPES = new Set(['1', '2', '3', '4', '5', '6', '7', '8']);
 const MIN_FIELDS = 10;
 
-const tokenClient = new net.Socket();
-tokenClient.connect(tokenPort, '10.0.0.17', () => {
-    console.log('Połączono z serwerem tokenów');
-});
+let tokenClient = null;
+let reconnectInterval = 5000; // 5 sekund między próbami ponownego połączenia
 
-tokenClient.on('error', (error) => {
-    console.error('Błąd połączenia z serwerem tokenów:', error.message);
-});
+function connectToTokenServer() {
+    if (tokenClient) {
+        tokenClient.destroy();
+    }
 
-function sendTokenInfo(token, ipAddress) {
-  console.log(`Nowy token otrzymany: ${token} od IP: ${ipAddress}`);
-  const tokenInfo = JSON.stringify({ token, ipAddress });
-  tokenClient.write(tokenInfo + '\n');
-  console.log(`Token wysłany do serwera docelowego`);
+    tokenClient = new net.Socket();
+
+    tokenClient.connect(tokenPort, '10.0.0.17', () => {
+        console.log('Połączono z serwerem tokenów');
+        reconnectInterval = 5000; // Reset interwału do wartości początkowej po udanym połączeniu
+    });
+
+    tokenClient.on('error', (error) => {
+        console.error('Błąd połączenia z serwerem tokenów:', error.message);
+    });
+
+    tokenClient.on('close', () => {
+        console.log('Połączenie z serwerem tokenów zostało zamknięte. Próba ponownego połączenia...');
+        setTimeout(connectToTokenServer, reconnectInterval);
+        reconnectInterval = Math.min(reconnectInterval * 2, 60000); // Zwiększ interwał, max 1 minuta
+    });
 }
 
+connectToTokenServer();
+
+function sendTokenInfo(token, ipAddress) {
+    console.log(`Nowy token otrzymany: ${token} od IP: ${ipAddress}`);
+    const tokenInfo = JSON.stringify({ token, ipAddress });
+    if (tokenClient && tokenClient.writable) {
+        tokenClient.write(tokenInfo + '\n');
+        console.log(`Token wysłany do serwera docelowego`);
+    } else {
+        console.log(`Nie można wysłać tokenu. Serwer tokenów jest niedostępny.`);
+    }
+}
 
 function isValidMessage(message) {
     const fields = message.split(',');
@@ -49,62 +71,62 @@ function isBinaryData(data) {
 }
 
 const feedServer = net.createServer(feedSocket => {
-  console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
+    console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
-  let buffer = Buffer.alloc(0);
-  let currentToken = null;
+    let buffer = Buffer.alloc(0);
+    let currentToken = null;
 
-  feedSocket.on('data', data => {
-      buffer = Buffer.concat([buffer, data]);
-      processBuffer();
-  });
+    feedSocket.on('data', data => {
+        buffer = Buffer.concat([buffer, data]);
+        processBuffer();
+    });
 
-  function processBuffer() {
-    while (buffer.length > 0) {
-        // Obsługa tokena
-        if (buffer.toString().startsWith('TOKEN:')) {
-            const tokenEnd = buffer.indexOf('\n');
-            if (tokenEnd !== -1) {
-                currentToken = buffer.slice(6, tokenEnd).toString().trim();
-                sendTokenInfo(currentToken, feedSocket.remoteAddress);
-                buffer = buffer.slice(tokenEnd + 1);
-                continue;  // Przejdź do następnej iteracji, aby przetworzyć resztę bufora
-            } else {
-                break;  // Niepełny token, czekamy na więcej danych
-            }
-        }
-
-        // Obsługa danych binarnych
-        if (isBinaryData(buffer)) {
-            const binaryLength = 1024; // Przykładowa długość, dostosuj do rzeczywistej długości ramki
-            if (buffer.length >= binaryLength) {
-                const binaryData = buffer.slice(0, binaryLength);
-                if (!binaryData.toString().includes('TOKEN:')) {
-                    sendToBinaryClients(binaryData);
+    function processBuffer() {
+        while (buffer.length > 0) {
+            // Obsługa tokena
+            if (buffer.toString().startsWith('TOKEN:')) {
+                const tokenEnd = buffer.indexOf('\n');
+                if (tokenEnd !== -1) {
+                    currentToken = buffer.slice(6, tokenEnd).toString().trim();
+                    sendTokenInfo(currentToken, feedSocket.remoteAddress);
+                    buffer = buffer.slice(tokenEnd + 1);
+                    continue;  // Przejdź do następnej iteracji, aby przetworzyć resztę bufora
                 } else {
-                    console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
+                    break;  // Niepełny token, czekamy na więcej danych
                 }
-                buffer = buffer.slice(binaryLength);
-            } else {
-                break; // Niepełne dane binarne, czekamy na więcej
             }
-        } else {
-            // Obsługa danych tekstowych
-            const textEnd = buffer.indexOf('\n');
-            if (textEnd !== -1) {
-                const message = buffer.slice(0, textEnd).toString().trim();
-                if (isValidMessage(message) && !message.includes('TOKEN:')) {
-                    sendToTextClients(message);
-                } else if (message.includes('TOKEN:')) {
-                    console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
+
+            // Obsługa danych binarnych
+            if (isBinaryData(buffer)) {
+                const binaryLength = 1024; // Przykładowa długość, dostosuj do rzeczywistej długości ramki
+                if (buffer.length >= binaryLength) {
+                    const binaryData = buffer.slice(0, binaryLength);
+                    if (!binaryData.toString().includes('TOKEN:')) {
+                        sendToBinaryClients(binaryData);
+                    } else {
+                        console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
+                    }
+                    buffer = buffer.slice(binaryLength);
+                } else {
+                    break; // Niepełne dane binarne, czekamy na więcej
                 }
-                buffer = buffer.slice(textEnd + 1);
             } else {
-                break;  // Niepełna wiadomość, czekamy na więcej danych
+                // Obsługa danych tekstowych
+                const textEnd = buffer.indexOf('\n');
+                if (textEnd !== -1) {
+                    const message = buffer.slice(0, textEnd).toString().trim();
+                    if (isValidMessage(message) && !message.includes('TOKEN:')) {
+                        sendToTextClients(message);
+                    } else if (message.includes('TOKEN:')) {
+                        console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
+                    }
+                    buffer = buffer.slice(textEnd + 1);
+                } else {
+                    break;  // Niepełna wiadomość, czekamy na więcej danych
+                }
             }
         }
     }
-}
 
     feedSocket.on('close', () => {
         console.log(`Połączenie zakończone z ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
@@ -179,11 +201,6 @@ function sendToTextClients(message) {
 
 function sendToBinaryClients(data) {
     sendToClients(connectedClientsBinary, data);
-}
-
-function sendTokenInfo(token, ipAddress) {
-    const tokenInfo = JSON.stringify({ token, ipAddress });
-    tokenClient.write(tokenInfo + '\n');
 }
 
 // Obsługa nieoczekiwanych błędów
