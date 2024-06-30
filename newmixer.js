@@ -222,4 +222,10 @@ process.on('uncaughtException', (error) => {
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    logToFile(`
+    logToFile(`Nieobsłużone odrzucenie obietnicy: ${reason}`);
+});
+
+setInterval(() => {
+    logToFile(`Liczba podłączonych klientów tekstowych: ${textClients.size}`);
+    logToFile(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
+}, 10000);
