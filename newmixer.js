@@ -278,7 +278,7 @@ function sendToClients(clients, data) {
 }
 
 function sendToBinaryClients(data) {
-    logToFile(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
+    logToFile(`Wysyłanie danych binarnych o długości: ${data.length}`);
     logToFile(`Pierwsze 50 bajtów danych binarnych: ${data.slice(0, 50).toString('hex')}`);
     sendToClients(binaryClients, data);
 }
