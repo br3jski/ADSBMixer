@@ -47,62 +47,46 @@ function sendTokenInfo(token, ipAddress) {
     }
 }
 
-function processData(data, ipAddress) {
-    let offset = 0;
-    while (offset < data.length) {
-        console.log(`Przetwarzanie danych od offsetu ${offset}, długość danych: ${data.length}`);
-        
-        // Sprawdź, czy to token
-        if (data.slice(offset).toString().startsWith('TOKEN:')) {
-            const newlineIndex = data.indexOf('\n', offset);
-            if (newlineIndex !== -1) {
-                const tokenLine = data.slice(offset, newlineIndex).toString().trim();
-                const token = tokenLine.slice(6).trim();
-                sendTokenInfo(token, ipAddress);
-                offset = newlineIndex + 1;
-                console.log('Przetworzono token');
-            } else {
-                console.log('Niepełny token, oczekiwanie na więcej danych');
-                break;
-            }
-        } else {
-            // Sprawdź, czy to dane binarne
-            let isBinary = false;
-            for (let i = offset; i < Math.min(offset + 10, data.length); i++) {
-                if (data[i] === 0x1a) {
-                    isBinary = true;
-                    break;
-                }
-            }
+function extractTokenAndProcess(data, ipAddress) {
+    let token = null;
+    let processedData = data;
 
-            if (isBinary) {
-                console.log('Wykryto dane binarne');
-                let endIndex = data.indexOf(0x1a, offset + 1);
-                if (endIndex === -1) {
-                    endIndex = data.length;
-                } else {
-                    endIndex++; // Uwzględnij końcowy znacznik
-                }
-                const binaryData = data.slice(offset, endIndex);
-                console.log(`Wysyłanie danych binarnych, długość: ${binaryData.length}`);
-                sendToBinaryClients(binaryData);
-                offset = endIndex;
-            } else {
-                // Dane tekstowe
-                const newlineIndex = data.indexOf('\n', offset);
-                if (newlineIndex !== -1) {
-                    const textData = data.slice(offset, newlineIndex + 1);
-                    console.log(`Wysyłanie danych tekstowych, długość: ${textData.length}`);
-                    sendToTextClients(textData);
-                    offset = newlineIndex + 1;
-                } else {
-                    console.log('Niepełna linia tekstu, oczekiwanie na więcej danych');
-                    break;
-                }
-            }
+    const tokenIndex = data.indexOf('TOKEN:');
+    if (tokenIndex !== -1) {
+        const newlineIndex = data.indexOf('\n', tokenIndex);
+        if (newlineIndex !== -1) {
+            token = data.slice(tokenIndex + 6, newlineIndex).toString().trim();
+            processedData = Buffer.concat([
+                data.slice(0, tokenIndex),
+                data.slice(newlineIndex + 1)
+            ]);
+            sendTokenInfo(token, ipAddress);
         }
     }
-    return data.slice(offset);
+
+    return { token, processedData };
+}
+
+function isBaseStationFormat(data) {
+    const firstLine = data.toString().split('\n')[0];
+    return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
+}
+
+function processData(data, ipAddress) {
+    const { processedData } = extractTokenAndProcess(data, ipAddress);
+
+    if (processedData[0] === 0x1a) {
+        console.log('Wykryto dane binarne (AVR/Beast)');
+        sendToBinaryClients(processedData);
+    } else if (isBaseStationFormat(processedData)) {
+        console.log('Wykryto dane tekstowe (BaseStation)');
+        sendToTextClients(processedData);
+    } else {
+        console.log('Nierozpoznany format danych, traktowanie jako binarne');
+        sendToBinaryClients(processedData);
+    }
+
+    return Buffer.alloc(0); // Zwracamy pusty bufor, bo wszystkie dane zostały przetworzone
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -209,7 +193,6 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Nieobsłużone odrzucenie obietnicy:', reason);
 });
 
-// Dodaj to na końcu pliku, aby monitorować połączenia klientów
 setInterval(() => {
     console.log(`Liczba podłączonych klientów tekstowych: ${connectedClientsText.size}`);
     console.log(`Liczba podłączonych klientów binarnych: ${connectedClientsBinary.size}`);
