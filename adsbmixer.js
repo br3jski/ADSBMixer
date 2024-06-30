@@ -81,9 +81,11 @@ function processData(data, ipAddress) {
 
     if (isBaseStationFormat(processedData)) {
         console.log('Wykryto dane tekstowe (BaseStation)');
+        console.log(`Dane tekstowe: ${processedData.toString().slice(0, 100)}`);
         sendToTextClients(processedData);
     } else {
         console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
+        console.log(`Dane binarne: ${processedData.slice(0, 50).toString('hex')}`);
         sendToBinaryClients(processedData);
     }
 
