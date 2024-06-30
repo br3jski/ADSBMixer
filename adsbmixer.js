@@ -87,8 +87,13 @@ function isBaseStationFormat(data) {
 }
 
 function processData(data, ipAddress) {
+    logToFile(`Przetwarzanie danych o długości: ${data.length} bajtów`);
+    
+    // Najpierw ekstrahujemy token
+    const { token, processedData } = extractTokenAndProcess(data, ipAddress);
+    
     // Sprawdź, czy dane są w formacie BaseStation
-    const dataString = data.toString().trim();
+    const dataString = processedData.toString().trim();
     const isBaseStation = dataString.startsWith('MSG,');
 
     if (isBaseStation) {
@@ -99,15 +104,7 @@ function processData(data, ipAddress) {
         for (const line of lines) {
             const parts = line.split(',');
             if (parts.length === 22) {
-                // Sprawdź, czy callsign (pole 10) zawiera token
-                if (parts[10].includes('TOKEN:')) {
-                    const token = extractTokenFromCallsign(parts[10]);
-                    if (token) {
-                        sendTokenInfo(token, ipAddress);
-                        parts[10] = ''; // Usuwamy callsign zawierający token
-                        tokensExtracted++;
-                    }
-                }
+                // Usuwamy sprawdzanie tokenu w callsign, ponieważ już to zrobiliśmy
                 const processedLine = parts.join(',');
                 if (validateBaseStationLine(processedLine)) {
                     processedLines.push(processedLine);
@@ -128,8 +125,8 @@ function processData(data, ipAddress) {
         invalidMessages += lines.length - processedLines.length;
     } else {
         // Dane binarne
-        logToFile(`Otrzymano dane binarne o długości: ${data.length} bajtów`);
-        sendToBinaryClients(data);
+        logToFile(`Otrzymano dane binarne o długości: ${processedData.length} bajtów`);
+        sendToBinaryClients(processedData);
         totalMessages += 1;
         validMessages += 1; // Zakładamy, że dane binarne są zawsze poprawne
     }
@@ -139,8 +136,8 @@ function processData(data, ipAddress) {
     if (currentTime - lastReportTime >= REPORT_INTERVAL) {
         const errorRate = invalidMessages / totalMessages;
         logToFile(`Statystyki: Łącznie ${totalMessages} wiadomości, ${validMessages} poprawnych, ${invalidMessages} (${(errorRate * 100).toFixed(2)}%) niepoprawnych`);
-        if (isBaseStation) {
-            logToFile(`Wyekstrahowano ${tokensExtracted} tokenów z danych BaseStation`);
+        if (token) {
+            logToFile(`Wyekstrahowano token: ${token}`);
         }
         
         if (errorRate > ERROR_THRESHOLD) {
