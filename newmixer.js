@@ -83,7 +83,7 @@ function processData(data, ipAddress) {
         sendToBinaryClients(processedData);
     }
 
-    return Buffer.alloc(0); // Zwracamy pusty bufor, bo wszystkie dane zostały przetworzone
+    return Buffer.alloc(0);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -114,39 +114,46 @@ feedServer.listen(feedPort, () => {
     console.log(`Serwer nasłuchuje na porcie ${feedPort}`);
 });
 
-function createOutputServer(port, isTextServer) {
-    const clients = new Set();
-    const server = net.createServer(outputSocket => {
-        const clientType = isTextServer ? 'tekstowy' : 'binarny';
-        console.log(`Klient ${clientType} połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-    
-        clients.add(outputSocket);
+const textClients = new Set();
+const binaryClients = new Set();
 
-        outputSocket.on('close', () => {
-            console.log(`Klient ${clientType} rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-            clients.delete(outputSocket);
-        });
+const textServer = net.createServer(socket => {
+    console.log(`Klient tekstowy połączony: ${socket.remoteAddress}:${socket.remotePort}`);
+    textClients.add(socket);
 
-        outputSocket.on('error', (error) => {
-            console.error(`Błąd połączenia klienta ${clientType} ${outputSocket.remoteAddress}:${outputSocket.remotePort}:`, error.message);
-            clients.delete(outputSocket);
-            outputSocket.destroy();
-        });
+    socket.on('close', () => {
+        console.log(`Klient tekstowy rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
+        textClients.delete(socket);
     });
 
-    server.on('error', (error) => {
-        console.error(`Błąd serwera ${isTextServer ? 'tekstowego' : 'binarnego'}:`, error.message);
+    socket.on('error', (error) => {
+        console.error(`Błąd klienta tekstowego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
+        textClients.delete(socket);
+    });
+});
+
+textServer.listen(outputPortText, '10.0.0.1', () => {
+    console.log(`Serwer tekstowy nasłuchuje na porcie ${outputPortText}`);
+});
+
+const binaryServer = net.createServer(socket => {
+    console.log(`Klient binarny połączony: ${socket.remoteAddress}:${socket.remotePort}`);
+    binaryClients.add(socket);
+
+    socket.on('close', () => {
+        console.log(`Klient binarny rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
+        binaryClients.delete(socket);
     });
 
-    server.listen(port, '10.0.0.1', () => {
-        console.log(`Serwer ${isTextServer ? 'tekstowy' : 'binarny'} nasłuchuje na porcie ${port}`);
+    socket.on('error', (error) => {
+        console.error(`Błąd klienta binarnego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
+        binaryClients.delete(socket);
     });
+});
 
-    return { server, clients };
-}
-
-const { server: outputServerText, clients: connectedClientsText } = createOutputServer(outputPortText, true);
-const { server: outputServerBinary, clients: connectedClientsBinary } = createOutputServer(outputPortBinary, false);
+binaryServer.listen(outputPortBinary, '10.0.0.1', () => {
+    console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
+});
 
 function sendToClients(clients, data) {
     console.log(`Próba wysłania danych do ${clients.size} klientów`);
@@ -167,19 +174,13 @@ function sendToClients(clients, data) {
 }
 
 function sendToBinaryClients(data) {
-    console.log(`Próba wysłania danych binarnych o długości: ${data.length}`);
-    if (connectedClientsBinary.size === 0) {
-        console.log('Brak podłączonych klientów binarnych');
-    }
-    sendToClients(connectedClientsBinary, data);
+    console.log(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
+    sendToClients(binaryClients, data);
 }
 
 function sendToTextClients(data) {
-    console.log(`Próba wysłania danych tekstowych o długości: ${data.length}`);
-    if (connectedClientsText.size === 0) {
-        console.log('Brak podłączonych klientów tekstowych');
-    }
-    sendToClients(connectedClientsText, data);
+    console.log(`Próba wysłania danych tekstowych o długości: ${data.length} na port ${outputPortText}`);
+    sendToClients(textClients, data);
 }
 
 process.on('uncaughtException', (error) => {
@@ -191,6 +192,6 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 setInterval(() => {
-    console.log(`Liczba podłączonych klientów tekstowych: ${connectedClientsText.size}`);
-    console.log(`Liczba podłączonych klientów binarnych: ${connectedClientsBinary.size}`);
+    console.log(`Liczba podłączonych klientów tekstowych: ${textClients.size}`);
+    console.log(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
 }, 10000);
