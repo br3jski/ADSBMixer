@@ -90,7 +90,7 @@ function isValidMessage(message) {
 
 function isBinaryData(data) {
     // Sprawdź, czy dane zaczynają się od markera danych binarnych
-    return data[0] === 0x1a && (data[1] === 0x31 || data[1] === 0x32 || data[1] === 0x33);
+    return data.length > 0 && data[0] === 0x1a;
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -122,10 +122,10 @@ const feedServer = net.createServer(feedSocket => {
     
             // Sprawdź, czy mamy do czynienia z danymi binarnymi
             if (isBinaryData(buffer)) {
-                // Znajdź koniec ramki binarnej (możesz dostosować to do swojego formatu danych)
-                let endIndex = 1024; // Przykładowa długość ramki binarnej
-                for (let i = 1; i < Math.min(buffer.length, 1024); i++) {
-                    if (buffer[i] === 0x1a) { // Zakładamy, że 0x1a to marker końca ramki
+                // Znajdź koniec ramki binarnej
+                let endIndex = 1024; // Maksymalna długość ramki binarnej
+                for (let i = 1; i < Math.min(buffer.length, endIndex); i++) {
+                    if (buffer[i] === 0x1a) { // Marker końca ramki
                         endIndex = i + 1;
                         break;
                     }
@@ -150,7 +150,6 @@ const feedServer = net.createServer(feedSocket => {
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
     
-            // Dodatkowe sprawdzenie, czy linia nie zawiera tokena
             if (line.startsWith('TOKEN:')) {
                 const token = line.slice(6).trim();
                 sendTokenInfo(token, feedSocket.remoteAddress);
@@ -158,7 +157,7 @@ const feedServer = net.createServer(feedSocket => {
                 console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
                 sendToTextClients(line);
             } else {
-                console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
+                console.log(`Pominięto nieprawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
             }
         }
     }
