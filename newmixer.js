@@ -65,15 +65,16 @@ function extractTokenAndProcess(data, ipAddress) {
 }
 
 function isBaseStationFormat(data) {
-    // Sprawdź, czy dane są tekstowe
-    if (data.every(byte => (byte >= 32 && byte <= 126) || byte === 10 || byte === 13)) {
-        const firstLine = data.toString().split('\n')[0];
-        return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
-    }
-    return false;
+    const baseStationRegex = /^MSG,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+.*$/m;
+    const dataString = data.toString();
+    const isMatch = baseStationRegex.test(dataString);
+    console.log('Sprawdzanie formatu danych:', dataString);
+    console.log('Czy dane pasują do formatu BaseStation:', isMatch);
+    return isMatch;
 }
 
 function processData(data, ipAddress) {
+    console.log('Otrzymane dane do przetworzenia:', data.toString());
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
     console.log('Typ danych:', typeof processedData);
