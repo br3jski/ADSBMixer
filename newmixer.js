@@ -47,8 +47,13 @@ function sendTokenInfo(token, ipAddress) {
     logToFile(`Nowy token otrzymany: ${token} od IP: ${ipAddress}`);
     const tokenInfo = JSON.stringify({ token, ipAddress });
     if (tokenClient && tokenClient.writable) {
-        tokenClient.write(tokenInfo + '\n');
-        logToFile(`Token wysłany do serwera docelowego`);
+        tokenClient.write(tokenInfo + '\n', (err) => {
+            if (err) {
+                logToFile(`Błąd wysyłania tokenu: ${err.message}`);
+            } else {
+                logToFile(`Token wysłany do serwera docelowego`);
+            }
+        });
     } else {
         logToFile(`Nie można wysłać tokenu. Serwer tokenów jest niedostępny.`);
     }
@@ -159,7 +164,12 @@ function processData(data, ipAddress) {
 
 function extractTokenFromCallsign(callsign) {
     const tokenMatch = callsign.match(/TOKEN:ADS-[a-f0-9]{32}/);
-    return tokenMatch ? tokenMatch[0].slice(6) : null; // Zwracamy token bez prefiksu "TOKEN:"
+    if (tokenMatch) {
+        const token = tokenMatch[0].slice(6); // Zwracamy token bez prefiksu "TOKEN:"
+        logToFile(`Token wyodrębniony z callsign: ${token}`);
+        return token;
+    }
+    return null;
 }
 
 function validateBaseStationLine(line) {
