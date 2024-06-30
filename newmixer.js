@@ -94,6 +94,7 @@ function processData(data, ipAddress) {
     if (logCounter % logInterval === 0) {
         logToFile(`Typ danych: ${typeof processedData}`);
         logToFile(`Pierwsze kilka bajtów: ${processedData.slice(0, 10)}`);
+        logToFile(`Dane jako tekst: ${processedData.toString('utf8')}`);
     }
     logCounter++;
 
