@@ -86,9 +86,84 @@ function isBaseStationFormat(data) {
     return isMatch;
 }
 
+function processData(data, ipAddress) {
+    // Sprawdź, czy dane są w formacie BaseStation
+    const isBaseStation = data.toString().trim().startsWith('MSG,');
+
+    if (isBaseStation) {
+        const lines = data.toString().trim().split('\n');
+        const processedLines = [];
+        let tokensExtracted = 0;
+
+        for (const line of lines) {
+            const parts = line.split(',');
+            if (parts.length === 22) {
+                // Sprawdź, czy callsign (pole 10) zawiera token
+                if (parts[10].includes('TOKEN:')) {
+                    const token = extractTokenFromCallsign(parts[10]);
+                    if (token) {
+                        sendTokenInfo(token, ipAddress);
+                        parts[10] = ''; // Usuwamy callsign zawierający token
+                        tokensExtracted++;
+                    }
+                }
+                const processedLine = parts.join(',');
+                if (validateBaseStationLine(processedLine)) {
+                    processedLines.push(processedLine);
+                } else {
+                    logToFile(`Odrzucona linia BaseStation: ${processedLine}`);
+                }
+            } else {
+                logToFile(`Nieprawidłowa liczba pól BaseStation: ${line}`);
+            }
+        }
+
+        if (processedLines.length > 0) {
+            sendToTextClients(Buffer.from(processedLines.join('\n') + '\n'));
+        }
+
+        totalMessages += lines.length;
+        validMessages += processedLines.length;
+        invalidMessages += lines.length - processedLines.length;
+    } else {
+        // Dane binarne
+        logToFile(`Otrzymano dane binarne o długości: ${data.length} bajtów`);
+        sendToBinaryClients(data);
+        totalMessages += 1;
+        validMessages += 1; // Zakładamy, że dane binarne są zawsze poprawne
+    }
+
+    // Logowanie statystyk
+    const currentTime = Date.now();
+    if (currentTime - lastReportTime >= REPORT_INTERVAL) {
+        const errorRate = invalidMessages / totalMessages;
+        logToFile(`Statystyki: Łącznie ${totalMessages} wiadomości, ${validMessages} poprawnych, ${invalidMessages} (${(errorRate * 100).toFixed(2)}%) niepoprawnych`);
+        if (isBaseStation) {
+            logToFile(`Wyekstrahowano ${tokensExtracted} tokenów z danych BaseStation`);
+        }
+        
+        if (errorRate > ERROR_THRESHOLD) {
+            logToFile(`UWAGA: Procent uszkodzonych wiadomości (${(errorRate * 100).toFixed(2)}%) przekroczył próg ${ERROR_THRESHOLD * 100}%`);
+        }
+
+        // Resetuj liczniki
+        totalMessages = 0;
+        validMessages = 0;
+        invalidMessages = 0;
+        lastReportTime = currentTime;
+    }
+
+    return Buffer.alloc(0);
+}
+
+function extractTokenFromCallsign(callsign) {
+    const tokenMatch = callsign.match(/TOKEN:ADS-[a-f0-9]{32}/);
+    return tokenMatch ? tokenMatch[0].slice(6) : null; // Zwracamy token bez prefiksu "TOKEN:"
+}
+
 function validateBaseStationLine(line) {
     const parts = line.split(',');
-    if (parts.length < 10) return false;
+    if (parts.length !== 22) return false; // BaseStation format powinien mieć dokładnie 22 pola
 
     // Sprawdź typ wiadomości (powinien być liczbą od 1 do 8)
     if (!/^[1-8]$/.test(parts[1])) return false;
@@ -101,44 +176,11 @@ function validateBaseStationLine(line) {
     if (!dateTimeRegex.test(parts[6] + ',' + parts[7])) return false;
     if (!dateTimeRegex.test(parts[8] + ',' + parts[9])) return false;
 
+    // Sprawdź, czy callsign (pole 10) nie zawiera tokenu
+    if (parts[10].includes('TOKEN:')) return false;
+
     return true;
 }
-
-let logCounter = 0;
-const logInterval = 100; // Loguj co 100 pakietów
-function processData(data, ipAddress) {
-    const { processedData } = extractTokenAndProcess(data, ipAddress);
-
-    if (isBaseStationFormat(processedData)) {
-        const lines = processedData.toString().trim().split('\n');
-        const validLines = lines.filter(validateBaseStationLine);
-        const invalidLines = lines.filter(line => !validateBaseStationLine(line));
-
-        logToFile(`Przetworzono ${lines.length} linii, z czego ${validLines.length} poprawnych i ${invalidLines.length} niepoprawnych.`);
-
-        if (validLines.length > 0) {
-            logToFile('Wykryto dane tekstowe (BaseStation)');
-            sendToTextClients(Buffer.from(validLines.join('\n') + '\n'));
-        }
-
-        if (invalidLines.length > 0) {
-            logToFile('Wykryto niepoprawne dane BaseStation');
-            sendToBinaryClients(Buffer.from(invalidLines.join('\n') + '\n'));
-        }
-
-        totalMessages += lines.length;
-        validMessages += validLines.length;
-        invalidMessages += invalidLines.length;
-    } else {
-        logToFile('Wykryto dane binarne lub nierozpoznany format');
-        sendToBinaryClients(processedData);
-        totalMessages += 1;
-        invalidMessages += 1;
-    }
-
-    return Buffer.alloc(0);
-}
-
 const feedServer = net.createServer(feedSocket => {
     logToFile(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
