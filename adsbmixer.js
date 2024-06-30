@@ -88,11 +88,6 @@ function isValidMessage(message) {
     return true;
 }
 
-function isBinaryData(data) {
-    // Sprawdź, czy dane zaczynają się od markera danych binarnych
-    return data.length > 0 && data[0] === 0x1a;
-}
-
 const feedServer = net.createServer(feedSocket => {
     console.log(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
@@ -105,7 +100,7 @@ const feedServer = net.createServer(feedSocket => {
 
     function processBuffer() {
         while (buffer.length > 0) {
-            // Najpierw sprawdź, czy mamy token
+            // Obsługa tokena
             if (buffer.toString().startsWith('TOKEN:')) {
                 const newlineIndex = buffer.indexOf('\n');
                 if (newlineIndex !== -1) {
@@ -115,20 +110,17 @@ const feedServer = net.createServer(feedSocket => {
                     buffer = buffer.slice(newlineIndex + 1);
                     continue;
                 } else {
-                    // Niepełny token, czekamy na więcej danych
-                    break;
+                    break; // Niepełny token, czekamy na więcej danych
                 }
             }
-    
-            // Sprawdź, czy mamy do czynienia z danymi binarnymi
-            if (isBinaryData(buffer)) {
-                // Znajdź koniec ramki binarnej
-                let endIndex = 1024; // Maksymalna długość ramki binarnej
-                for (let i = 1; i < Math.min(buffer.length, endIndex); i++) {
-                    if (buffer[i] === 0x1a) { // Marker końca ramki
-                        endIndex = i + 1;
-                        break;
-                    }
+
+            // Obsługa danych binarnych
+            if (buffer[0] === 0x1a) {
+                let endIndex = buffer.indexOf(0x1a, 1);
+                if (endIndex === -1) {
+                    endIndex = Math.min(buffer.length, 1024); // Maksymalna długość ramki binarnej
+                } else {
+                    endIndex++; // Uwzględnij marker końca
                 }
                 
                 const chunk = buffer.slice(0, endIndex);
@@ -137,7 +129,7 @@ const feedServer = net.createServer(feedSocket => {
                 console.log(`Wysłano dane binarne o długości ${chunk.length}`);
                 continue;
             }
-    
+
             // Obsługa wiadomości tekstowych
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
@@ -146,18 +138,15 @@ const feedServer = net.createServer(feedSocket => {
                 }
                 break;
             }
-    
+
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
-    
-            if (line.startsWith('TOKEN:')) {
-                const token = line.slice(6).trim();
-                sendTokenInfo(token, feedSocket.remoteAddress);
-            } else if (isValidMessage(line)) {
+
+            if (isValidMessage(line)) {
                 console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
                 sendToTextClients(line);
             } else {
-                console.log(`Pominięto nieprawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
+                console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
             }
         }
     }
