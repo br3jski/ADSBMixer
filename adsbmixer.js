@@ -85,14 +85,32 @@ const feedServer = net.createServer(feedSocket => {
 
     function processBuffer() {
         while (buffer.length > 0) {
-            // Sprawdź, czy mamy do czynienia z danymi binarnymi
-            if (isBinaryData(buffer)) {
-                // Jeśli tak, wyślij całą zawartość bufora jako dane binarne
-                sendToBinaryClients(buffer);
-                buffer = Buffer.alloc(0);  // Wyczyść bufor
-                return;
+            // Najpierw sprawdź, czy mamy token
+            if (buffer.toString().startsWith('TOKEN:')) {
+                const newlineIndex = buffer.indexOf('\n');
+                if (newlineIndex !== -1) {
+                    const tokenLine = buffer.slice(0, newlineIndex).toString().trim();
+                    const token = tokenLine.slice(6).trim();
+                    sendTokenInfo(token, feedSocket.remoteAddress);
+                    buffer = buffer.slice(newlineIndex + 1);
+                    continue;
+                } else {
+                    // Niepełny token, czekamy na więcej danych
+                    break;
+                }
             }
     
+            // Sprawdź, czy mamy do czynienia z danymi binarnymi
+            if (isBinaryData(buffer)) {
+                // Wyślij pierwsze 1024 bajty (lub mniej, jeśli bufor jest mniejszy)
+                const chunkSize = Math.min(buffer.length, 1024);
+                const chunk = buffer.slice(0, chunkSize);
+                sendToBinaryClients(chunk);
+                buffer = buffer.slice(chunkSize);
+                continue;
+            }
+    
+            // Obsługa wiadomości tekstowych
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
                 // Jeśli nie ma pełnej linii, a bufor jest zbyt duży, usuń część danych
@@ -105,10 +123,7 @@ const feedServer = net.createServer(feedSocket => {
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
     
-            if (line.startsWith('TOKEN:')) {
-                const token = line.slice(6).trim();
-                sendTokenInfo(token, feedSocket.remoteAddress);
-            } else if (isValidMessage(line)) {
+            if (isValidMessage(line)) {
                 sendToTextClients(line);
             } else {
                 console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
