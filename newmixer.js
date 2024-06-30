@@ -61,6 +61,7 @@ function extractTokenAndProcess(data, ipAddress) {
         }
     }
 
+    console.log('Przetworzone dane po wycięciu tokena:', processedData.toString());
     return { token, processedData };
 }
 
@@ -74,7 +75,6 @@ function isBaseStationFormat(data) {
 }
 
 function processData(data, ipAddress) {
-    console.log('Otrzymane dane do przetworzenia:', data.toString());
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
     console.log('Typ danych:', typeof processedData);
