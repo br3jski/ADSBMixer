@@ -51,6 +51,11 @@ function sendTokenInfo(token, ipAddress) {
 }
 
 function isValidMessage(message) {
+    if (message.includes('TOKEN:')) {
+        console.log('Wiadomość zawiera TOKEN, pomijanie');
+        return false;
+    }
+
     const fields = message.split(',');
   
     if (fields.length < MIN_FIELDS) {
@@ -141,7 +146,11 @@ const feedServer = net.createServer(feedSocket => {
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
 
-            if (isValidMessage(line)) {
+            // Dodatkowe sprawdzenie, czy linia nie zawiera tokena
+            if (line.startsWith('TOKEN:')) {
+                const token = line.slice(6).trim();
+                sendTokenInfo(token, feedSocket.remoteAddress);
+            } else if (isValidMessage(line)) {
                 console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
                 sendToTextClients(line);
             } else {
