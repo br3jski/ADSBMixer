@@ -65,12 +65,12 @@ function extractTokenAndProcess(data, ipAddress) {
 }
 
 function isBaseStationFormat(data) {
-    // Sprawdź, czy dane są tekstowe
-    if (data.every(byte => (byte >= 32 && byte <= 126) || byte === 10 || byte === 13)) {
+    try {
         const firstLine = data.toString().split('\n')[0];
         return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
+    } catch (error) {
+        return false;
     }
-    return false;
 }
 
 function processData(data, ipAddress) {
