@@ -69,8 +69,8 @@ function isValidMessage(message) {
 }
 
 function isBinaryData(data) {
-    const header = data.slice(0, 3);
-    return header[0] === 0x1a && (header[1] === 0x31 || header[1] === 0x32 || header[1] === 0x33);
+    // Sprawdź, czy dane zawierają nieprintowalne znaki
+    return data.some(byte => byte < 32 || byte > 126);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -85,6 +85,14 @@ const feedServer = net.createServer(feedSocket => {
 
     function processBuffer() {
         while (buffer.length > 0) {
+            // Sprawdź, czy mamy do czynienia z danymi binarnymi
+            if (isBinaryData(buffer)) {
+                // Jeśli tak, wyślij całą zawartość bufora jako dane binarne
+                sendToBinaryClients(buffer);
+                buffer = Buffer.alloc(0);  // Wyczyść bufor
+                return;
+            }
+    
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
                 // Jeśli nie ma pełnej linii, a bufor jest zbyt duży, usuń część danych
@@ -93,17 +101,15 @@ const feedServer = net.createServer(feedSocket => {
                 }
                 break;
             }
-
+    
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
-
+    
             if (line.startsWith('TOKEN:')) {
                 const token = line.slice(6).trim();
                 sendTokenInfo(token, feedSocket.remoteAddress);
             } else if (isValidMessage(line)) {
                 sendToTextClients(line);
-            } else if (isBinaryData(Buffer.from(line))) {
-                sendToBinaryClients(Buffer.from(line));
             } else {
                 console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
             }
