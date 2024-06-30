@@ -86,20 +86,54 @@ function isBaseStationFormat(data) {
     return isMatch;
 }
 
+function validateBaseStationLine(line) {
+    const parts = line.split(',');
+    if (parts.length < 10) return false;
+
+    // Sprawdź typ wiadomości (powinien być liczbą od 1 do 8)
+    if (!/^[1-8]$/.test(parts[1])) return false;
+
+    // Sprawdź format ICAO (6 znaków szesnastkowych)
+    if (!/^[A-Fa-f0-9]{6}$/.test(parts[4])) return false;
+
+    // Sprawdź format daty i czasu
+    const dateTimeRegex = /^\d{4}\/\d{2}\/\d{2},\d{2}:\d{2}:\d{2}\.\d{3}$/;
+    if (!dateTimeRegex.test(parts[6] + ',' + parts[7])) return false;
+    if (!dateTimeRegex.test(parts[8] + ',' + parts[9])) return false;
+
+    return true;
+}
+
 let logCounter = 0;
 const logInterval = 100; // Loguj co 100 pakietów
-
 function processData(data, ipAddress) {
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
-    logToFile(`Przetwarzanie danych: ${processedData.toString()}`);
-
     if (isBaseStationFormat(processedData)) {
-        logToFile('Wykryto dane tekstowe (BaseStation)');
-        sendToTextClients(processedData);
+        const lines = processedData.toString().trim().split('\n');
+        const validLines = lines.filter(validateBaseStationLine);
+        const invalidLines = lines.filter(line => !validateBaseStationLine(line));
+
+        logToFile(`Przetworzono ${lines.length} linii, z czego ${validLines.length} poprawnych i ${invalidLines.length} niepoprawnych.`);
+
+        if (validLines.length > 0) {
+            logToFile('Wykryto dane tekstowe (BaseStation)');
+            sendToTextClients(Buffer.from(validLines.join('\n') + '\n'));
+        }
+
+        if (invalidLines.length > 0) {
+            logToFile('Wykryto niepoprawne dane BaseStation');
+            sendToBinaryClients(Buffer.from(invalidLines.join('\n') + '\n'));
+        }
+
+        totalMessages += lines.length;
+        validMessages += validLines.length;
+        invalidMessages += invalidLines.length;
     } else {
-        logToFile('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
+        logToFile('Wykryto dane binarne lub nierozpoznany format');
         sendToBinaryClients(processedData);
+        totalMessages += 1;
+        invalidMessages += 1;
     }
 
     return Buffer.alloc(0);
@@ -222,3 +256,18 @@ setInterval(() => {
     logToFile(`Liczba podłączonych klientów tekstowych: ${textClients.size}`);
     logToFile(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
 }, 10000);
+
+let totalMessages = 0;
+let validMessages = 0;
+let invalidMessages = 0;
+
+setInterval(() => {
+    const validPercentage = (validMessages / totalMessages * 100).toFixed(2);
+    const invalidPercentage = (invalidMessages / totalMessages * 100).toFixed(2);
+    logToFile(`Statystyki: Łącznie ${totalMessages} wiadomości, ${validMessages} (${validPercentage}%) poprawnych, ${invalidMessages} (${invalidPercentage}%) niepoprawnych`);
+    
+    // Resetuj liczniki
+    totalMessages = 0;
+    validMessages = 0;
+    invalidMessages = 0;
+}, 60000); // Raportuj co minutę
