@@ -88,10 +88,11 @@ function isBaseStationFormat(data) {
 
 function processData(data, ipAddress) {
     // Sprawdź, czy dane są w formacie BaseStation
-    const isBaseStation = data.toString().trim().startsWith('MSG,');
+    const dataString = data.toString().trim();
+    const isBaseStation = dataString.startsWith('MSG,');
 
     if (isBaseStation) {
-        const lines = data.toString().trim().split('\n');
+        const lines = dataString.split('\n');
         const processedLines = [];
         let tokensExtracted = 0;
 
@@ -181,6 +182,7 @@ function validateBaseStationLine(line) {
 
     return true;
 }
+
 const feedServer = net.createServer(feedSocket => {
     logToFile(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
@@ -254,10 +256,7 @@ const binaryServer = net.createServer(socket => {
 
 binaryServer.listen(outputPortBinary, '0.0.0.0', () => {
     logToFile(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
-});
-
-binaryServer.on('error', (error) => {
-    logToFile(`Błąd serwera binarnego: ${error.message}`);
+    console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
 });
 
 function sendToClients(clients, data) {
@@ -279,12 +278,8 @@ function sendToClients(clients, data) {
 }
 
 function sendToBinaryClients(data) {
-    logToFile(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
-    logToFile(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
-    if (binaryClients.size === 0) {
-        logToFile('Brak podłączonych klientów binarnych');
-        return;
-    }
+    logToFile(`Wysyłanie danych binarnych o długości: ${data.length}`);
+    logToFile(`Pierwsze 50 bajtów danych binarnych: ${data.slice(0, 50).toString('hex')}`);
     sendToClients(binaryClients, data);
 }
 
