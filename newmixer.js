@@ -87,48 +87,60 @@ function isBaseStationFormat(data) {
 }
 
 function processData(data, ipAddress) {
-    const lines = data.toString().trim().split('\n');
-    const processedLines = [];
-    let tokensExtracted = 0;
+    // Sprawdź, czy dane są w formacie BaseStation
+    const isBaseStation = data.toString().trim().startsWith('MSG,');
 
-    for (const line of lines) {
-        const parts = line.split(',');
-        if (parts.length === 22) {
-            // Sprawdź, czy callsign (pole 10) zawiera token
-            if (parts[10].includes('TOKEN:')) {
-                const token = extractTokenFromCallsign(parts[10]);
-                if (token) {
-                    sendTokenInfo(token, ipAddress);
-                    parts[10] = ''; // Usuwamy callsign zawierający token
-                    tokensExtracted++;
+    if (isBaseStation) {
+        const lines = data.toString().trim().split('\n');
+        const processedLines = [];
+        let tokensExtracted = 0;
+
+        for (const line of lines) {
+            const parts = line.split(',');
+            if (parts.length === 22) {
+                // Sprawdź, czy callsign (pole 10) zawiera token
+                if (parts[10].includes('TOKEN:')) {
+                    const token = extractTokenFromCallsign(parts[10]);
+                    if (token) {
+                        sendTokenInfo(token, ipAddress);
+                        parts[10] = ''; // Usuwamy callsign zawierający token
+                        tokensExtracted++;
+                    }
                 }
-            }
-            const processedLine = parts.join(',');
-            if (validateBaseStationLine(processedLine)) {
-                processedLines.push(processedLine);
+                const processedLine = parts.join(',');
+                if (validateBaseStationLine(processedLine)) {
+                    processedLines.push(processedLine);
+                } else {
+                    logToFile(`Odrzucona linia BaseStation: ${processedLine}`);
+                }
             } else {
-                logToFile(`Odrzucona linia: ${processedLine}`);
+                logToFile(`Nieprawidłowa liczba pól BaseStation: ${line}`);
             }
-        } else {
-            // Linia nie ma prawidłowej liczby pól dla formatu BaseStation
-            logToFile(`Nieprawidłowa liczba pól: ${line}`);
         }
-    }
 
-    if (processedLines.length > 0) {
-        sendToTextClients(Buffer.from(processedLines.join('\n') + '\n'));
-    }
+        if (processedLines.length > 0) {
+            sendToTextClients(Buffer.from(processedLines.join('\n') + '\n'));
+        }
 
-    totalMessages += lines.length;
-    validMessages += processedLines.length;
-    invalidMessages += lines.length - processedLines.length;
+        totalMessages += lines.length;
+        validMessages += processedLines.length;
+        invalidMessages += lines.length - processedLines.length;
+    } else {
+        // Dane binarne
+        logToFile(`Otrzymano dane binarne o długości: ${data.length} bajtów`);
+        sendToBinaryClients(data);
+        totalMessages += 1;
+        validMessages += 1; // Zakładamy, że dane binarne są zawsze poprawne
+    }
 
     // Logowanie statystyk
     const currentTime = Date.now();
     if (currentTime - lastReportTime >= REPORT_INTERVAL) {
         const errorRate = invalidMessages / totalMessages;
         logToFile(`Statystyki: Łącznie ${totalMessages} wiadomości, ${validMessages} poprawnych, ${invalidMessages} (${(errorRate * 100).toFixed(2)}%) niepoprawnych`);
-        logToFile(`Wyekstrahowano ${tokensExtracted} tokenów`);
+        if (isBaseStation) {
+            logToFile(`Wyekstrahowano ${tokensExtracted} tokenów z danych BaseStation`);
+        }
         
         if (errorRate > ERROR_THRESHOLD) {
             logToFile(`UWAGA: Procent uszkodzonych wiadomości (${(errorRate * 100).toFixed(2)}%) przekroczył próg ${ERROR_THRESHOLD * 100}%`);
