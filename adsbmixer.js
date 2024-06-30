@@ -256,6 +256,10 @@ binaryServer.listen(outputPortBinary, '0.0.0.0', () => {
     logToFile(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
 });
 
+binaryServer.on('error', (error) => {
+    logToFile(`Błąd serwera binarnego: ${error.message}`);
+});
+
 function sendToClients(clients, data) {
     logToFile(`Próba wysłania danych do ${clients.size} klientów`);
     for (const socket of clients) {
@@ -276,7 +280,11 @@ function sendToClients(clients, data) {
 
 function sendToBinaryClients(data) {
     logToFile(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
-    logToFile(`Pierwsze 50 bajtów danych binarnych: ${data.slice(0, 50).toString('hex')}`);
+    logToFile(`Liczba podłączonych klientów binarnych: ${binaryClients.size}`);
+    if (binaryClients.size === 0) {
+        logToFile('Brak podłączonych klientów binarnych');
+        return;
+    }
     sendToClients(binaryClients, data);
 }
 

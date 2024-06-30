@@ -181,6 +181,7 @@ function validateBaseStationLine(line) {
 
     return true;
 }
+
 const feedServer = net.createServer(feedSocket => {
     logToFile(`Nowe połączenie od ${feedSocket.remoteAddress}:${feedSocket.remotePort}`);
 
@@ -254,6 +255,7 @@ const binaryServer = net.createServer(socket => {
 
 binaryServer.listen(outputPortBinary, '0.0.0.0', () => {
     logToFile(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
+    console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
 });
 
 function sendToClients(clients, data) {
