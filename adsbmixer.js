@@ -53,24 +53,44 @@ function sendTokenInfo(token, ipAddress) {
 function isValidMessage(message) {
     const fields = message.split(',');
   
-    if (fields.length < MIN_FIELDS) return false;
-    if (fields[0] !== 'MSG' || !MSG_TYPES.has(fields[1])) return false;
+    if (fields.length < MIN_FIELDS) {
+        console.log(`Niewystarczająca liczba pól: ${fields.length}`);
+        return false;
+    }
+    if (fields[0] !== 'MSG' || !MSG_TYPES.has(fields[1])) {
+        console.log(`Nieprawidłowy typ wiadomości: ${fields[0]}, ${fields[1]}`);
+        return false;
+    }
   
     const dateTimeRegex = /^\d{4}\/\d{2}\/\d{2},\d{2}:\d{2}:\d{2}\.\d{3}$/;
-    if (fields.length > 7 && !dateTimeRegex.test(fields[6] + ',' + fields[7])) return false;
+    if (fields.length > 7 && !dateTimeRegex.test(fields[6] + ',' + fields[7])) {
+        console.log(`Nieprawidłowy format daty/czasu`);
+        return false;
+    }
   
     if (fields[1] === '3') {
-        if (fields.length < 16) return false;
+        if (fields.length < 16) {
+            console.log(`Niewystarczająca liczba pól dla typu 3`);
+            return false;
+        }
         const lat = parseFloat(fields[14]);
         const lon = parseFloat(fields[15]);
-        if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return false;
+        if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+            console.log(`Nieprawidłowe współrzędne: ${lat}, ${lon}`);
+            return false;
+        }
     }
     return true;
 }
 
 function isBinaryData(data) {
-    // Sprawdź, czy dane zawierają nieprintowalne znaki
-    return data.some(byte => byte < 32 || byte > 126);
+    const checkLength = Math.min(data.length, 64);
+    for (let i = 0; i < checkLength; i++) {
+        if (data[i] < 32 || data[i] > 126) {
+            return true;
+        }
+    }
+    return false;
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -99,31 +119,30 @@ const feedServer = net.createServer(feedSocket => {
                     break;
                 }
             }
-    
+
             // Sprawdź, czy mamy do czynienia z danymi binarnymi
             if (isBinaryData(buffer)) {
-                // Wyślij pierwsze 1024 bajty (lub mniej, jeśli bufor jest mniejszy)
                 const chunkSize = Math.min(buffer.length, 1024);
                 const chunk = buffer.slice(0, chunkSize);
                 sendToBinaryClients(chunk);
                 buffer = buffer.slice(chunkSize);
                 continue;
             }
-    
+
             // Obsługa wiadomości tekstowych
             const newlineIndex = buffer.indexOf('\n');
             if (newlineIndex === -1) {
-                // Jeśli nie ma pełnej linii, a bufor jest zbyt duży, usuń część danych
                 if (buffer.length > 10240) { // 10 KB
                     buffer = buffer.slice(buffer.length - 10240);
                 }
                 break;
             }
-    
+
             const line = buffer.slice(0, newlineIndex).toString().trim();
             buffer = buffer.slice(newlineIndex + 1);
-    
+
             if (isValidMessage(line)) {
+                console.log(`Znaleziono prawidłową wiadomość tekstową: ${line.substring(0, 50)}...`);
                 sendToTextClients(line);
             } else {
                 console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
@@ -184,11 +203,14 @@ const outputServerText = createOutputServer(outputPortText, true);
 const outputServerBinary = createOutputServer(outputPortBinary, false);
 
 function sendToClients(clients, data) {
+    console.log(`Próba wysłania danych do ${clients.size} klientów`);
     for (const socket of clients) {
         try {
             const success = socket.write(data);
             if (!success) {
                 console.warn(`Nie udało się wysłać danych do klienta ${socket.remoteAddress}:${socket.remotePort}`);
+            } else {
+                console.log(`Dane wysłane do klienta ${socket.remoteAddress}:${socket.remotePort}`);
             }
         } catch (error) {
             console.error(`Błąd podczas wysyłania danych do klienta ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
@@ -199,10 +221,12 @@ function sendToClients(clients, data) {
 }
 
 function sendToTextClients(message) {
+    console.log(`Wysyłanie danych tekstowych: ${message.substring(0, 50)}...`);
     sendToClients(connectedClientsText, message + '\n');
 }
 
 function sendToBinaryClients(data) {
+    console.log(`Wysyłanie danych binarnych o długości: ${data.length}`);
     sendToClients(connectedClientsBinary, data);
 }
 
