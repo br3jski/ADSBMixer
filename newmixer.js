@@ -5,9 +5,6 @@ const outputPortText = 58511;
 const outputPortBinary = 58512;
 const tokenPort = 8888;
 
-const connectedClientsText = new Set();
-const connectedClientsBinary = new Set();
-
 let tokenClient = null;
 let reconnectInterval = 5000;
 
@@ -118,21 +115,21 @@ feedServer.listen(feedPort, () => {
 });
 
 function createOutputServer(port, isTextServer) {
+    const clients = new Set();
     const server = net.createServer(outputSocket => {
         const clientType = isTextServer ? 'tekstowy' : 'binarny';
         console.log(`Klient ${clientType} połączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
     
-        const clientSet = isTextServer ? connectedClientsText : connectedClientsBinary;
-        clientSet.add(outputSocket);
+        clients.add(outputSocket);
 
         outputSocket.on('close', () => {
             console.log(`Klient ${clientType} rozłączony: ${outputSocket.remoteAddress}:${outputSocket.remotePort}`);
-            clientSet.delete(outputSocket);
+            clients.delete(outputSocket);
         });
 
         outputSocket.on('error', (error) => {
             console.error(`Błąd połączenia klienta ${clientType} ${outputSocket.remoteAddress}:${outputSocket.remotePort}:`, error.message);
-            clientSet.delete(outputSocket);
+            clients.delete(outputSocket);
             outputSocket.destroy();
         });
     });
@@ -145,11 +142,11 @@ function createOutputServer(port, isTextServer) {
         console.log(`Serwer ${isTextServer ? 'tekstowy' : 'binarny'} nasłuchuje na porcie ${port}`);
     });
 
-    return server;
+    return { server, clients };
 }
 
-const outputServerText = createOutputServer(outputPortText, true);
-const outputServerBinary = createOutputServer(outputPortBinary, false);
+const { server: outputServerText, clients: connectedClientsText } = createOutputServer(outputPortText, true);
+const { server: outputServerBinary, clients: connectedClientsBinary } = createOutputServer(outputPortBinary, false);
 
 function sendToClients(clients, data) {
     console.log(`Próba wysłania danych do ${clients.size} klientów`);
