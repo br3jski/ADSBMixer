@@ -60,7 +60,7 @@ function isValidMessage(message) {
     if (!dateTimeRegex.test(fields[6] + ',' + fields[7])) return false;
   
     if (fields[1] === '3') {
-        if (isNaN(parseFloat(fields[14])) || isNaN(parseFloat(fields[15]))) return false;
+        if (fields.length < 16 || isNaN(parseFloat(fields[14])) || isNaN(parseFloat(fields[15]))) return false;
     }
     return true;
 }
@@ -102,17 +102,13 @@ const feedServer = net.createServer(feedSocket => {
     
             // Obsługa danych binarnych
             if (isBinaryData(Buffer.from(line))) {
-                if (!line.includes('TOKEN:')) {
-                    sendToBinaryClients(Buffer.from(line));
-                } else {
-                    console.error('Wykryto token w danych binarnych. Pomijam wysyłanie.');
-                }
+                sendToBinaryClients(Buffer.from(line));
             } else {
                 // Obsługa danych tekstowych
-                if (isValidMessage(line) && !line.includes('TOKEN:')) {
+                if (isValidMessage(line)) {
                     sendToTextClients(line);
-                } else if (line.includes('TOKEN:')) {
-                    console.error('Wykryto token w wiadomości tekstowej. Pomijam wysyłanie.');
+                } else {
+                    console.log(`Pominięto nieprawidłową wiadomość: ${line.substring(0, 50)}...`);
                 }
             }
         }
