@@ -77,7 +77,7 @@ function extractTokenAndProcess(data, ipAddress) {
 }
 
 function isBaseStationFormat(data) {
-    const baseStationRegex = /^MSG,\d+,\d+,\d+,[A-Fa-f0-9]+,\d+,\d{4}\/\d{2}\/\d{2},\d{2}:\d{2}:\d{2}\.\d{3},/;
+    const baseStationRegex = /^MSG,(\d+),(\d+),(\d+),([A-Fa-f0-9]{6}),(\d+),(\d{4}\/\d{2}\/\d{2}),(\d{2}:\d{2}:\d{2}\.\d{3}),(\d{4}\/\d{2}\/\d{2}),(\d{2}:\d{2}:\d{2}\.\d{3}),(.*)$/;
     const dataString = data.toString().trim();
     const lines = dataString.split('\n');
     const isMatch = lines.some(line => baseStationRegex.test(line.trim()));
