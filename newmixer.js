@@ -82,12 +82,12 @@ function processData(data, ipAddress) {
     if (isBaseStationFormat(processedData)) {
         console.log('Wykryto dane tekstowe (BaseStation)');
         sendToTextClients(processedData);
-        return Buffer.alloc(0);
     } else {
         console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
         sendToBinaryClients(processedData);
-        return Buffer.alloc(0);
     }
+
+    return Buffer.alloc(0);
 }
 
 const feedServer = net.createServer(feedSocket => {
