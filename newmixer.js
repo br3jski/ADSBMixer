@@ -50,6 +50,8 @@ function sendTokenInfo(token, ipAddress) {
 function processData(data, ipAddress) {
     let offset = 0;
     while (offset < data.length) {
+        console.log(`Przetwarzanie danych od offsetu ${offset}, długość danych: ${data.length}`);
+        
         // Sprawdź, czy to token
         if (data.slice(offset).toString().startsWith('TOKEN:')) {
             const newlineIndex = data.indexOf('\n', offset);
@@ -58,33 +60,49 @@ function processData(data, ipAddress) {
                 const token = tokenLine.slice(6).trim();
                 sendTokenInfo(token, ipAddress);
                 offset = newlineIndex + 1;
+                console.log('Przetworzono token');
             } else {
-                break; // Niepełny token, czekaj na więcej danych
+                console.log('Niepełny token, oczekiwanie na więcej danych');
+                break;
             }
-        } else if (data[offset] === 0x1a) {
-            // Dane binarne
-            let endIndex = data.indexOf(0x1a, offset + 1);
-            if (endIndex === -1) {
-                endIndex = data.length;
-            } else {
-                endIndex++; // Uwzględnij końcowy znacznik
-            }
-            const binaryData = data.slice(offset, endIndex);
-            sendToBinaryClients(binaryData);
-            offset = endIndex;
         } else {
-            // Dane tekstowe
-            const newlineIndex = data.indexOf('\n', offset);
-            if (newlineIndex !== -1) {
-                const textData = data.slice(offset, newlineIndex + 1);
-                sendToTextClients(textData);
-                offset = newlineIndex + 1;
+            // Sprawdź, czy to dane binarne
+            let isBinary = false;
+            for (let i = offset; i < Math.min(offset + 10, data.length); i++) {
+                if (data[i] === 0x1a) {
+                    isBinary = true;
+                    break;
+                }
+            }
+
+            if (isBinary) {
+                console.log('Wykryto dane binarne');
+                let endIndex = data.indexOf(0x1a, offset + 1);
+                if (endIndex === -1) {
+                    endIndex = data.length;
+                } else {
+                    endIndex++; // Uwzględnij końcowy znacznik
+                }
+                const binaryData = data.slice(offset, endIndex);
+                console.log(`Wysyłanie danych binarnych, długość: ${binaryData.length}`);
+                sendToBinaryClients(binaryData);
+                offset = endIndex;
             } else {
-                break; // Niepełna linia tekstu, czekaj na więcej danych
+                // Dane tekstowe
+                const newlineIndex = data.indexOf('\n', offset);
+                if (newlineIndex !== -1) {
+                    const textData = data.slice(offset, newlineIndex + 1);
+                    console.log(`Wysyłanie danych tekstowych, długość: ${textData.length}`);
+                    sendToTextClients(textData);
+                    offset = newlineIndex + 1;
+                } else {
+                    console.log('Niepełna linia tekstu, oczekiwanie na więcej danych');
+                    break;
+                }
             }
         }
     }
-    return data.slice(offset); // Zwróć nieprzetworzony bufor
+    return data.slice(offset);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -167,14 +185,20 @@ function sendToClients(clients, data) {
     }
 }
 
-function sendToTextClients(data) {
-    console.log(`Wysyłanie danych tekstowych o długości: ${data.length}`);
-    sendToClients(connectedClientsText, data);
+function sendToBinaryClients(data) {
+    console.log(`Próba wysłania danych binarnych o długości: ${data.length}`);
+    if (connectedClientsBinary.size === 0) {
+        console.log('Brak podłączonych klientów binarnych');
+    }
+    sendToClients(connectedClientsBinary, data);
 }
 
-function sendToBinaryClients(data) {
-    console.log(`Wysyłanie danych binarnych o długości: ${data.length}`);
-    sendToClients(connectedClientsBinary, data);
+function sendToTextClients(data) {
+    console.log(`Próba wysłania danych tekstowych o długości: ${data.length}`);
+    if (connectedClientsText.size === 0) {
+        console.log('Brak podłączonych klientów tekstowych');
+    }
+    sendToClients(connectedClientsText, data);
 }
 
 process.on('uncaughtException', (error) => {
@@ -184,3 +208,9 @@ process.on('uncaughtException', (error) => {
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Nieobsłużone odrzucenie obietnicy:', reason);
 });
+
+// Dodaj to na końcu pliku, aby monitorować połączenia klientów
+setInterval(() => {
+    console.log(`Liczba podłączonych klientów tekstowych: ${connectedClientsText.size}`);
+    console.log(`Liczba podłączonych klientów binarnych: ${connectedClientsBinary.size}`);
+}, 10000);
