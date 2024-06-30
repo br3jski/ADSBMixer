@@ -77,9 +77,10 @@ function extractTokenAndProcess(data, ipAddress) {
 }
 
 function isBaseStationFormat(data) {
-    const baseStationRegex = /^MSG,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+.*$/m;
+    const baseStationRegex = /^MSG,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+,\d+.*$/;
     const dataString = data.toString();
-    const isMatch = baseStationRegex.test(dataString);
+    const lines = dataString.split('\n');
+    const isMatch = lines.some(line => baseStationRegex.test(line.trim()));
     logToFile(`Sprawdzanie formatu danych: ${dataString}`);
     logToFile(`Czy dane pasują do formatu BaseStation: ${isMatch}`);
     return isMatch;
@@ -91,22 +92,13 @@ const logInterval = 100; // Loguj co 100 pakietów
 function processData(data, ipAddress) {
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
-    if (logCounter % logInterval === 0) {
-        logToFile(`Typ danych: ${typeof processedData}`);
-        logToFile(`Pierwsze kilka bajtów: ${processedData.slice(0, 10)}`);
-        logToFile(`Dane jako tekst: ${processedData.toString('utf8')}`);
-    }
-    logCounter++;
+    logToFile(`Przetwarzanie danych: ${processedData.toString()}`);
 
     if (isBaseStationFormat(processedData)) {
-        if (logCounter % logInterval === 0) {
-            logToFile('Wykryto dane tekstowe (BaseStation)');
-        }
+        logToFile('Wykryto dane tekstowe (BaseStation)');
         sendToTextClients(processedData);
     } else {
-        if (logCounter % logInterval === 0) {
-            logToFile('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
-        }
+        logToFile('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
         sendToBinaryClients(processedData);
     }
 
@@ -213,7 +205,7 @@ function sendToBinaryClients(data) {
 }
 
 function sendToTextClients(data) {
-    logToFile(`Próba wysłania danych tekstowych o długości: ${data.length} na port ${outputPortText}`);
+    logToFile(`Wysyłanie danych tekstowych o długości: ${data.length} na port ${outputPortText}`);
     logToFile(`Pierwsze 100 znaków danych tekstowych: ${data.slice(0, 100).toString()}`);
     sendToClients(textClients, data);
 }
