@@ -82,12 +82,12 @@ function processData(data, ipAddress) {
     if (isBaseStationFormat(processedData)) {
         console.log('Wykryto dane tekstowe (BaseStation)');
         sendToTextClients(processedData);
+        return Buffer.alloc(0);
     } else {
         console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
         sendToBinaryClients(processedData);
+        return Buffer.alloc(0);
     }
-
-    return Buffer.alloc(0);
 }
 
 const feedServer = net.createServer(feedSocket => {
@@ -124,38 +124,44 @@ const binaryClients = new Set();
 const textServer = net.createServer(socket => {
     console.log(`Klient tekstowy połączony: ${socket.remoteAddress}:${socket.remotePort}`);
     textClients.add(socket);
+    console.log(`Liczba klientów tekstowych po dodaniu: ${textClients.size}`);
 
     socket.on('close', () => {
         console.log(`Klient tekstowy rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
         textClients.delete(socket);
+        console.log(`Liczba klientów tekstowych po usunięciu: ${textClients.size}`);
     });
 
     socket.on('error', (error) => {
         console.error(`Błąd klienta tekstowego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
         textClients.delete(socket);
+        console.log(`Liczba klientów tekstowych po błędzie: ${textClients.size}`);
     });
 });
 
-textServer.listen(outputPortText, '10.0.0.1', () => {
+textServer.listen(outputPortText, '0.0.0.0', () => {
     console.log(`Serwer tekstowy nasłuchuje na porcie ${outputPortText}`);
 });
 
 const binaryServer = net.createServer(socket => {
     console.log(`Klient binarny połączony: ${socket.remoteAddress}:${socket.remotePort}`);
     binaryClients.add(socket);
+    console.log(`Liczba klientów binarnych po dodaniu: ${binaryClients.size}`);
 
     socket.on('close', () => {
         console.log(`Klient binarny rozłączony: ${socket.remoteAddress}:${socket.remotePort}`);
         binaryClients.delete(socket);
+        console.log(`Liczba klientów binarnych po usunięciu: ${binaryClients.size}`);
     });
 
     socket.on('error', (error) => {
         console.error(`Błąd klienta binarnego ${socket.remoteAddress}:${socket.remotePort}:`, error.message);
         binaryClients.delete(socket);
+        console.log(`Liczba klientów binarnych po błędzie: ${binaryClients.size}`);
     });
 });
 
-binaryServer.listen(outputPortBinary, '10.0.0.1', () => {
+binaryServer.listen(outputPortBinary, '0.0.0.0', () => {
     console.log(`Serwer binarny nasłuchuje na porcie ${outputPortBinary}`);
 });
 
@@ -179,11 +185,13 @@ function sendToClients(clients, data) {
 
 function sendToBinaryClients(data) {
     console.log(`Próba wysłania danych binarnych o długości: ${data.length} na port ${outputPortBinary}`);
+    console.log(`Pierwsze 50 bajtów danych binarnych: ${data.slice(0, 50).toString('hex')}`);
     sendToClients(binaryClients, data);
 }
 
 function sendToTextClients(data) {
     console.log(`Próba wysłania danych tekstowych o długości: ${data.length} na port ${outputPortText}`);
+    console.log(`Pierwsze 100 znaków danych tekstowych: ${data.slice(0, 100).toString()}`);
     sendToClients(textClients, data);
 }
 
