@@ -47,13 +47,8 @@ function sendTokenInfo(token, ipAddress) {
     logToFile(`Nowy token otrzymany: ${token} od IP: ${ipAddress}`);
     const tokenInfo = JSON.stringify({ token, ipAddress });
     if (tokenClient && tokenClient.writable) {
-        tokenClient.write(tokenInfo + '\n', (err) => {
-            if (err) {
-                logToFile(`Błąd wysyłania tokenu: ${err.message}`);
-            } else {
-                logToFile(`Token wysłany do serwera docelowego`);
-            }
-        });
+        tokenClient.write(tokenInfo + '\n');
+        logToFile(`Token wysłany do serwera docelowego`);
     } else {
         logToFile(`Nie można wysłać tokenu. Serwer tokenów jest niedostępny.`);
     }
@@ -92,8 +87,13 @@ function isBaseStationFormat(data) {
 }
 
 function processData(data, ipAddress) {
+    logToFile(`Przetwarzanie danych o długości: ${data.length} bajtów`);
+    
+    // Najpierw ekstrahujemy token
+    const { token, processedData } = extractTokenAndProcess(data, ipAddress);
+    
     // Sprawdź, czy dane są w formacie BaseStation
-    const dataString = data.toString().trim();
+    const dataString = processedData.toString().trim();
     const isBaseStation = dataString.startsWith('MSG,');
 
     if (isBaseStation) {
@@ -104,15 +104,7 @@ function processData(data, ipAddress) {
         for (const line of lines) {
             const parts = line.split(',');
             if (parts.length === 22) {
-                // Sprawdź, czy callsign (pole 10) zawiera token
-                if (parts[10].includes('TOKEN:')) {
-                    const token = extractTokenFromCallsign(parts[10]);
-                    if (token) {
-                        sendTokenInfo(token, ipAddress);
-                        parts[10] = ''; // Usuwamy callsign zawierający token
-                        tokensExtracted++;
-                    }
-                }
+                // Usuwamy sprawdzanie tokenu w callsign, ponieważ już to zrobiliśmy
                 const processedLine = parts.join(',');
                 if (validateBaseStationLine(processedLine)) {
                     processedLines.push(processedLine);
@@ -133,8 +125,8 @@ function processData(data, ipAddress) {
         invalidMessages += lines.length - processedLines.length;
     } else {
         // Dane binarne
-        logToFile(`Otrzymano dane binarne o długości: ${data.length} bajtów`);
-        sendToBinaryClients(data);
+        logToFile(`Otrzymano dane binarne o długości: ${processedData.length} bajtów`);
+        sendToBinaryClients(processedData);
         totalMessages += 1;
         validMessages += 1; // Zakładamy, że dane binarne są zawsze poprawne
     }
@@ -144,8 +136,8 @@ function processData(data, ipAddress) {
     if (currentTime - lastReportTime >= REPORT_INTERVAL) {
         const errorRate = invalidMessages / totalMessages;
         logToFile(`Statystyki: Łącznie ${totalMessages} wiadomości, ${validMessages} poprawnych, ${invalidMessages} (${(errorRate * 100).toFixed(2)}%) niepoprawnych`);
-        if (isBaseStation) {
-            logToFile(`Wyekstrahowano ${tokensExtracted} tokenów z danych BaseStation`);
+        if (token) {
+            logToFile(`Wyekstrahowano token: ${token}`);
         }
         
         if (errorRate > ERROR_THRESHOLD) {
@@ -164,12 +156,7 @@ function processData(data, ipAddress) {
 
 function extractTokenFromCallsign(callsign) {
     const tokenMatch = callsign.match(/TOKEN:ADS-[a-f0-9]{32}/);
-    if (tokenMatch) {
-        const token = tokenMatch[0].slice(6); // Zwracamy token bez prefiksu "TOKEN:"
-        logToFile(`Token wyodrębniony z callsign: ${token}`);
-        return token;
-    }
-    return null;
+    return tokenMatch ? tokenMatch[0].slice(6) : null; // Zwracamy token bez prefiksu "TOKEN:"
 }
 
 function validateBaseStationLine(line) {
