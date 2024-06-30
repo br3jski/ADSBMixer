@@ -65,21 +65,25 @@ function extractTokenAndProcess(data, ipAddress) {
 }
 
 function isBaseStationFormat(data) {
-    const firstLine = data.toString().split('\n')[0];
-    return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
+    // Sprawdź, czy dane są tekstowe
+    if (data.every(byte => byte >= 32 && byte <= 126 || byte === 10 || byte === 13)) {
+        const firstLine = data.toString().split('\n')[0];
+        return firstLine.startsWith('MSG,') && firstLine.split(',').length >= 10;
+    }
+    return false;
 }
 
 function processData(data, ipAddress) {
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
-    if (processedData[0] === 0x1a) {
-        console.log('Wykryto dane binarne (AVR/Beast)');
-        sendToBinaryClients(processedData);
-    } else if (isBaseStationFormat(processedData)) {
+    console.log('Typ danych:', typeof processedData);
+    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 10));
+
+    if (isBaseStationFormat(processedData)) {
         console.log('Wykryto dane tekstowe (BaseStation)');
         sendToTextClients(processedData);
     } else {
-        console.log('Nierozpoznany format danych, traktowanie jako binarne');
+        console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
         sendToBinaryClients(processedData);
     }
 
