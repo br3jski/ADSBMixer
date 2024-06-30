@@ -57,7 +57,6 @@ function extractTokenAndProcess(data, ipAddress) {
                 data.slice(0, tokenIndex),
                 data.slice(newlineIndex + 1)
             ]);
-            sendTokenInfo(token, ipAddress);
         }
     }
 
@@ -82,23 +81,25 @@ function isBaseStationFormat(data) {
 }
 
 function processData(data, ipAddress) {
-    const { processedData } = extractTokenAndProcess(data, ipAddress);
+    const { token, processedData } = extractTokenAndProcess(data, ipAddress);
 
     console.log('Typ danych:', typeof processedData);
     console.log('Pierwsze kilka bajtów:', processedData.slice(0, 20).toString('hex'));
     console.log('Pierwsze 50 znaków jako tekst:', processedData.toString('utf8').slice(0, 50));
 
     const isBaseStation = isBaseStationFormat(processedData);
-    const isBinary = isProbablyBinary(processedData);
     console.log('Czy to format BaseStation?', isBaseStation);
-    console.log('Czy to prawdopodobnie dane binarne?', isBinary);
 
-    if (isBaseStation && !isBinary) {
+    if (token) {
+        sendTokenInfo(token, ipAddress);
+    }
+
+    if (isBaseStation) {
         console.log('Wykryto dane tekstowe (BaseStation)');
         console.log(`Dane tekstowe: ${processedData.toString('utf8').slice(0, 100)}`);
         sendToTextClients(processedData);
     } else {
-        console.log('Wykryto dane binarne (AVR/Beast) lub nierozpoznany format');
+        console.log('Wykryto dane binarne (AVR/Beast)');
         console.log(`Dane binarne: ${processedData.slice(0, 50).toString('hex')}`);
         sendToBinaryClients(processedData);
     }
