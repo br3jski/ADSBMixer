@@ -68,7 +68,7 @@ function isBaseStationFormat(data) {
     try {
         const firstLine = data.toString().split('\n')[0];
         const fields = firstLine.split(',');
-        return firstLine.startsWith('MSG,') && fields.length >= 22;
+        return firstLine.startsWith('MSG,') && fields.length >= 10;
     } catch (error) {
         return false;
     }
@@ -78,7 +78,7 @@ function processData(data, ipAddress) {
     const { processedData } = extractTokenAndProcess(data, ipAddress);
 
     console.log('Typ danych:', typeof processedData);
-    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 10));
+    console.log('Pierwsze kilka bajtów:', processedData.slice(0, 10).toString('hex'));
 
     if (isBaseStationFormat(processedData)) {
         console.log('Wykryto dane tekstowe (BaseStation)');
