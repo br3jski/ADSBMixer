@@ -6,6 +6,7 @@ const outputPortText = 58511;
 const outputPortBinary = 58512;
 const tokenPort = 8888;
 
+let lastReportTime = Date.now();
 let tokenClient = null;
 let reconnectInterval = 5000;
 const logFile = fs.createWriteStream('debug.log', { flags: 'a' });
@@ -19,8 +20,10 @@ function logToFile(message) {
 }
 
 function connectToTokenServer() {
+    logToFile('Próba połączenia z serwerem tokenów');
     if (tokenClient) {
         tokenClient.destroy();
+        logToFile('Poprzednie połączenie tokenClient zniszczone');
     }
 
     tokenClient = new net.Socket();
@@ -41,6 +44,7 @@ function connectToTokenServer() {
     });
 }
 
+
 connectToTokenServer();
 
 function sendTokenInfo(token, ipAddress) {
@@ -55,18 +59,22 @@ function sendTokenInfo(token, ipAddress) {
 }
 
 function extractTokenAndProcess(data, ipAddress) {
+    logToFile(`Rozpoczęcie ekstrakcji tokena z danych od IP: ${ipAddress}`);
     let token = null;
     let processedData = data;
 
     const tokenIndex = data.indexOf('TOKEN:');
+    logToFile(`Indeks tokena: ${tokenIndex}`);
     if (tokenIndex !== -1) {
         const newlineIndex = data.indexOf('\n', tokenIndex);
+        logToFile(`Indeks nowej linii: ${newlineIndex}`);
         if (newlineIndex !== -1) {
             token = data.slice(tokenIndex + 6, newlineIndex).toString().trim();
             processedData = Buffer.concat([
                 data.slice(0, tokenIndex),
                 data.slice(newlineIndex + 1)
             ]);
+            logToFile(`Token znaleziony: ${token}`);
             sendTokenInfo(token, ipAddress);
             logToFile(`Token znaleziony i usunięty: ${token}`);
         }
@@ -75,6 +83,7 @@ function extractTokenAndProcess(data, ipAddress) {
     logToFile(`Przetworzone dane po wycięciu tokena: ${processedData.toString()}`);
     return { token, processedData };
 }
+
 
 function isBaseStationFormat(data) {
     const baseStationRegex = /^MSG,(\d+),(\d+),(\d+),([A-Fa-f0-9]{6}),(\d+),(\d{4}\/\d{2}\/\d{2}),(\d{2}:\d{2}:\d{2}\.\d{3}),(\d{4}\/\d{2}\/\d{2}),(\d{2}:\d{2}:\d{2}\.\d{3}),(.*)$/;
